@@ -3,14 +3,11 @@ import Foundation
 /// Configuration options for the FunnelMob SDK
 public struct FunnelMobConfiguration {
 
-    /// Application identifier (e.g., bundle ID)
-    public let appId: String
-
     /// API key for authentication
     public let apiKey: String
 
-    /// Environment (production or sandbox)
-    public var environment: Environment
+    /// Server (production or sandbox)
+    public var server: Server
 
     /// Log level for debugging
     public var logLevel: LogLevel
@@ -21,8 +18,8 @@ public struct FunnelMobConfiguration {
     /// Maximum number of events per batch
     public var maxBatchSize: Int
 
-    /// Environment options
-    public enum Environment {
+    /// Server options
+    public enum Server {
         case production
         case sandbox
 
@@ -52,12 +49,10 @@ public struct FunnelMobConfiguration {
 
     /// Initialize configuration with required parameters
     /// - Parameters:
-    ///   - appId: Application identifier
     ///   - apiKey: API key for authentication
-    public init(appId: String, apiKey: String) {
-        self.appId = appId
+    public init(apiKey: String) {
         self.apiKey = apiKey
-        self.environment = .production
+        self.server = .production
         self.logLevel = .none
         self.flushInterval = 30.0
         self.maxBatchSize = 100
@@ -68,10 +63,10 @@ public struct FunnelMobConfiguration {
 
 public extension FunnelMobConfiguration {
 
-    /// Set environment
-    func with(environment: Environment) -> FunnelMobConfiguration {
+    /// Set server
+    func with(server: Server) -> FunnelMobConfiguration {
         var config = self
-        config.environment = environment
+        config.server = server
         return config
     }
 

@@ -23,13 +23,13 @@ final class NetworkClient {
         completion: @escaping (Result<Void, NetworkError>) -> Void
     ) {
         let batch = EventBatch(
-            appId: configuration.appId,
+            platform: "ios",
             deviceId: DeviceInfo().deviceId,
             sessionId: nil, // TODO: Add session tracking
             events: events
         )
 
-        guard let url = URL(string: "\(configuration.environment.baseURL)/events") else {
+        guard let url = URL(string: "\(configuration.server.baseURL)/events") else {
             completion(.failure(.invalidURL))
             return
         }
@@ -80,7 +80,7 @@ final class NetworkClient {
 // MARK: - Models
 
 struct EventBatch: Encodable {
-    let appId: String
+    let platform: String
     let deviceId: String
     let sessionId: String?
     let events: [Event]

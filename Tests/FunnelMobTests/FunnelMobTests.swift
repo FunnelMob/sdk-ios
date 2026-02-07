@@ -12,13 +12,11 @@ final class FunnelMobTests: XCTestCase {
 
     func testConfigurationDefaults() {
         let config = FunnelMobConfiguration(
-            appId: "com.test.app",
             apiKey: "fm_test_key"
         )
 
-        XCTAssertEqual(config.appId, "com.test.app")
         XCTAssertEqual(config.apiKey, "fm_test_key")
-        XCTAssertEqual(config.environment, .production)
+        XCTAssertEqual(config.server, .production)
         XCTAssertEqual(config.logLevel, .none)
         XCTAssertEqual(config.flushInterval, 30.0)
         XCTAssertEqual(config.maxBatchSize, 100)
@@ -26,15 +24,14 @@ final class FunnelMobTests: XCTestCase {
 
     func testConfigurationBuilder() {
         let config = FunnelMobConfiguration(
-            appId: "com.test.app",
             apiKey: "fm_test_key"
         )
-        .with(environment: .sandbox)
+        .with(server: .sandbox)
         .with(logLevel: .debug)
         .with(flushInterval: 10.0)
         .with(maxBatchSize: 50)
 
-        XCTAssertEqual(config.environment, .sandbox)
+        XCTAssertEqual(config.server, .sandbox)
         XCTAssertEqual(config.logLevel, .debug)
         XCTAssertEqual(config.flushInterval, 10.0)
         XCTAssertEqual(config.maxBatchSize, 50)
@@ -42,7 +39,6 @@ final class FunnelMobTests: XCTestCase {
 
     func testFlushIntervalMinimum() {
         let config = FunnelMobConfiguration(
-            appId: "com.test.app",
             apiKey: "fm_test_key"
         )
         .with(flushInterval: 0.5) // Below minimum
@@ -52,7 +48,6 @@ final class FunnelMobTests: XCTestCase {
 
     func testMaxBatchSizeClamped() {
         let config = FunnelMobConfiguration(
-            appId: "com.test.app",
             apiKey: "fm_test_key"
         )
         .with(maxBatchSize: 200) // Above maximum
@@ -120,12 +115,12 @@ final class FunnelMobTests: XCTestCase {
     // MARK: - Environment Tests
 
     func testProductionBaseURL() {
-        let env = FunnelMobConfiguration.Environment.production
+        let env = FunnelMobConfiguration.Server.production
         XCTAssertEqual(env.baseURL, "https://api.funnelmob.com/v1")
     }
 
     func testSandboxBaseURL() {
-        let env = FunnelMobConfiguration.Environment.sandbox
+        let env = FunnelMobConfiguration.Server.sandbox
         XCTAssertEqual(env.baseURL, "https://sandbox.funnelmob.com/v1")
     }
 }
