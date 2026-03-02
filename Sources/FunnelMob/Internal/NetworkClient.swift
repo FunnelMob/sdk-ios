@@ -16,6 +16,70 @@ final class NetworkClient {
         encoder.keyEncodingStrategy = .convertToSnakeCase
     }
 
+    /// Send a session request and receive attribution result
+    func sendSession(
+        _ request: SessionRequest,
+        configuration: FunnelMobConfiguration,
+        completion: @escaping (Result<SessionResponse, NetworkError>) -> Void
+    ) {
+        guard let url = URL(string: "\(configuration.server.baseURL)/session") else {
+            completion(.failure(.invalidURL))
+            return
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(configuration.apiKey, forHTTPHeaderField: "X-FM-API-Key")
+
+        do {
+            urlRequest.httpBody = try encoder.encode(request)
+        } catch {
+            completion(.failure(.encodingError(error)))
+            return
+        }
+
+        let task = session.dataTask(with: urlRequest) { data, response, error in
+            if let error = error {
+                completion(.failure(.networkError(error)))
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(.failure(.invalidResponse))
+                return
+            }
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                guard let data = data else {
+                    completion(.failure(.invalidResponse))
+                    return
+                }
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    let sessionResponse = try decoder.decode(SessionResponse.self, from: data)
+                    completion(.success(sessionResponse))
+                } catch {
+                    completion(.failure(.encodingError(error)))
+                }
+            case 401:
+                completion(.failure(.unauthorized))
+            case 429:
+                completion(.failure(.rateLimited))
+            case 400...499:
+                completion(.failure(.clientError(httpResponse.statusCode)))
+            case 500...599:
+                completion(.failure(.serverError(httpResponse.statusCode)))
+            default:
+                completion(.failure(.unknownError(httpResponse.statusCode)))
+            }
+        }
+
+        task.resume()
+    }
+
     /// Send events to the API
     func sendEvents(
         _ events: [Event],

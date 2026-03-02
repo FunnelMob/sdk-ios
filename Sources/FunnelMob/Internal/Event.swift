@@ -7,6 +7,7 @@ struct Event: Codable {
     let timestamp: String
     let revenue: EventRevenue?
     let parameters: [String: Any]?
+    let attributionId: String?
 
     enum CodingKeys: String, CodingKey {
         case eventId = "event_id"
@@ -14,6 +15,7 @@ struct Event: Codable {
         case timestamp
         case revenue
         case parameters
+        case attributionId = "attribution_id"
     }
 
     init(
@@ -21,13 +23,15 @@ struct Event: Codable {
         eventName: String,
         timestamp: String,
         revenue: EventRevenue?,
-        parameters: [String: Any]?
+        parameters: [String: Any]?,
+        attributionId: String? = nil
     ) {
         self.eventId = eventId
         self.eventName = eventName
         self.timestamp = timestamp
         self.revenue = revenue
         self.parameters = parameters
+        self.attributionId = attributionId
     }
 
     // Custom encoding for parameters (Any type)
@@ -37,6 +41,7 @@ struct Event: Codable {
         try container.encode(eventName, forKey: .eventName)
         try container.encode(timestamp, forKey: .timestamp)
         try container.encodeIfPresent(revenue, forKey: .revenue)
+        try container.encodeIfPresent(attributionId, forKey: .attributionId)
 
         if let parameters = parameters {
             let jsonData = try JSONSerialization.data(withJSONObject: parameters)
@@ -51,6 +56,7 @@ struct Event: Codable {
         eventName = try container.decode(String.self, forKey: .eventName)
         timestamp = try container.decode(String.self, forKey: .timestamp)
         revenue = try container.decodeIfPresent(EventRevenue.self, forKey: .revenue)
+        attributionId = try container.decodeIfPresent(String.self, forKey: .attributionId)
 
         if let anyCodable = try container.decodeIfPresent(AnyCodable.self, forKey: .parameters) {
             parameters = anyCodable.value as? [String: Any]
@@ -64,6 +70,63 @@ struct Event: Codable {
 struct EventRevenue: Codable {
     let amount: String
     let currency: String
+}
+
+/// Attribution result from the server
+public struct AttributionResult: Codable {
+    public let attributionId: String
+    public let attributed: Bool
+    public let method: String
+    public let campaignId: String?
+    public let adNetwork: String?
+    public let adGroupId: String?
+    public let adId: String?
+    public let keyword: String?
+    public let confidence: Double
+
+    enum CodingKeys: String, CodingKey {
+        case attributionId = "attribution_id"
+        case attributed
+        case method
+        case campaignId = "campaign_id"
+        case adNetwork = "ad_network"
+        case adGroupId = "ad_group_id"
+        case adId = "ad_id"
+        case keyword
+        case confidence
+    }
+}
+
+/// Session request payload
+struct SessionRequest: Encodable {
+    let deviceId: String
+    let platform: String
+    let isFirstSession: Bool
+    let osVersion: String?
+    let deviceModel: String?
+    let language: String?
+    let timezone: String?
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case platform
+        case isFirstSession = "is_first_session"
+        case osVersion = "os_version"
+        case deviceModel = "device_model"
+        case language
+        case timezone
+    }
+}
+
+/// Session response from the server
+struct SessionResponse: Decodable {
+    let sessionId: String
+    let attribution: AttributionResult?
+
+    enum CodingKeys: String, CodingKey {
+        case sessionId = "session_id"
+        case attribution
+    }
 }
 
 /// Wrapper for encoding Any types
