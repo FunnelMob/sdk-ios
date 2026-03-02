@@ -97,34 +97,49 @@ public struct AttributionResult: Codable {
     }
 }
 
-/// Session request payload
-struct SessionRequest: Encodable {
-    let deviceId: String
-    let platform: String
-    let isFirstSession: Bool
+/// Device context for session requests
+struct DeviceContextPayload: Encodable {
     let osVersion: String?
     let deviceModel: String?
-    let language: String?
+    let locale: String?
     let timezone: String?
 
     enum CodingKeys: String, CodingKey {
-        case deviceId = "device_id"
-        case platform
-        case isFirstSession = "is_first_session"
         case osVersion = "os_version"
         case deviceModel = "device_model"
-        case language
+        case locale
         case timezone
+    }
+}
+
+/// Session request payload
+struct SessionRequest: Encodable {
+    let deviceId: String
+    let sessionId: String
+    let platform: String
+    let timestamp: String
+    let isFirstSession: Bool
+    let context: DeviceContextPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case sessionId = "session_id"
+        case platform
+        case timestamp
+        case isFirstSession = "is_first_session"
+        case context
     }
 }
 
 /// Session response from the server
 struct SessionResponse: Decodable {
     let sessionId: String
+    let serverTimestamp: String
     let attribution: AttributionResult?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
+        case serverTimestamp = "server_timestamp"
         case attribution
     }
 }

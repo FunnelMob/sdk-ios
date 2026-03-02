@@ -159,12 +159,16 @@ public final class FunnelMob {
         let context = deviceInfo.toContext()
         let request = SessionRequest(
             deviceId: deviceInfo.deviceId,
+            sessionId: UUID().uuidString,
             platform: "ios",
+            timestamp: ISO8601DateFormatter.funnelMob.string(from: Date()),
             isFirstSession: true,
-            osVersion: context.osVersion,
-            deviceModel: context.deviceModel,
-            language: context.locale,
-            timezone: context.timezone
+            context: DeviceContextPayload(
+                osVersion: context.osVersion,
+                deviceModel: context.deviceModel,
+                locale: context.locale,
+                timezone: context.timezone
+            )
         )
 
         networkClient.sendSession(request, configuration: config) { [weak self] result in
