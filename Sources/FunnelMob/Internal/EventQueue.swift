@@ -41,12 +41,19 @@ final class EventQueue {
     }
 
     /// Flush all events
-    func flush(using client: NetworkClient, configuration: FunnelMobConfiguration) {
+    func flush(using client: NetworkClient, configuration: FunnelMobConfiguration, userId: String? = nil) {
         let batch = dequeue(maxCount: configuration.maxBatchSize)
         guard !batch.isEmpty else { return }
 
-        // TODO: Implement actual network sending
         Logger.debug("Flushing \(batch.count) events")
+        client.sendEvents(batch, configuration: configuration, userId: userId) { result in
+            switch result {
+            case .success:
+                Logger.debug("Events sent successfully")
+            case .failure(let error):
+                Logger.error("Failed to send events: \(error)")
+            }
+        }
     }
 
     // MARK: - Persistence

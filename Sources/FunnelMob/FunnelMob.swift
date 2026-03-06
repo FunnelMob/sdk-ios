@@ -19,9 +19,12 @@ public final class FunnelMob {
     private let deviceInfo: DeviceInfo
     private var attributionId: String?
     private var attributionCallbacks: [AttributionCallback] = []
+    private var userId: String?
+    private var userProperties: [String: Any]?
 
     private static let keychainService = "com.funnelmob.attribution"
     private static let keychainAccount = "attribution_result"
+    private static let userIdKey = "com.funnelmob.userId"
 
     private init() {
         self.eventQueue = EventQueue()
@@ -43,6 +46,7 @@ public final class FunnelMob {
         Logger.logLevel = configuration.logLevel
         Logger.info("FunnelMob initialized")
 
+        restoreUserId()
         startSession()
     }
 
@@ -128,7 +132,7 @@ public final class FunnelMob {
     /// Force send queued events immediately
     public func flush() {
         guard let config = configuration else { return }
-        eventQueue.flush(using: networkClient, configuration: config)
+        eventQueue.flush(using: networkClient, configuration: config, userId: userId)
     }
 
     /// Enable or disable tracking
@@ -138,7 +142,95 @@ public final class FunnelMob {
         Logger.info("Tracking \(enabled ? "enabled" : "disabled")")
     }
 
+    // MARK: - User Identification
+
+    /// Set the user ID for identified users.
+    /// Sends an identify request to the server and attaches the user ID to all subsequent events.
+    /// - Parameter userId: The user identifier (must be non-empty)
+    public func setUserId(_ userId: String) {
+        guard !userId.isEmpty else {
+            Logger.error("setUserId: userId cannot be empty")
+            return
+        }
+
+        self.userId = userId
+        persistUserId(userId)
+        Logger.info("User ID set: \(userId)")
+        sendIdentify()
+    }
+
+    /// Set user properties for the current identified user.
+    /// Properties are merged with existing properties.
+    /// Requires setUserId() to be called first.
+    /// - Parameter properties: User properties to set
+    public func setUserProperties(_ properties: [String: Any]) {
+        guard userId != nil else {
+            Logger.error("setUserProperties: call setUserId() first")
+            return
+        }
+
+        if var existing = self.userProperties {
+            for (key, value) in properties {
+                existing[key] = value
+            }
+            self.userProperties = existing
+        } else {
+            self.userProperties = properties
+        }
+
+        Logger.debug("User properties updated")
+        sendIdentify()
+    }
+
+    /// Clear the current user ID (e.g., on logout).
+    /// Subsequent events will not include a user_id.
+    public func clearUserId() {
+        userId = nil
+        userProperties = nil
+        UserDefaults.standard.removeObject(forKey: Self.userIdKey)
+        Logger.info("User ID cleared")
+    }
+
     // MARK: - Private
+
+    private func sendIdentify() {
+        guard let config = configuration, let userId = userId else { return }
+
+        let context = deviceInfo.toContext()
+        let request = IdentifyRequest(
+            deviceId: deviceInfo.deviceId,
+            userId: userId,
+            platform: "ios",
+            timestamp: ISO8601DateFormatter.funnelMob.string(from: Date()),
+            userProperties: userProperties,
+            context: DeviceContextPayload(
+                osVersion: context.osVersion,
+                deviceModel: context.deviceModel,
+                locale: context.locale,
+                timezone: context.timezone
+            )
+        )
+
+        networkClient.sendIdentify(request, configuration: config) { result in
+            switch result {
+            case .success:
+                Logger.debug("Identify request sent")
+            case .failure(let error):
+                Logger.error("Identify request failed: \(error)")
+            }
+        }
+    }
+
+    private func persistUserId(_ userId: String) {
+        UserDefaults.standard.set(userId, forKey: Self.userIdKey)
+    }
+
+    private func restoreUserId() {
+        if let stored = UserDefaults.standard.string(forKey: Self.userIdKey) {
+            self.userId = stored
+            Logger.debug("Restored user ID: \(stored)")
+        }
+    }
 
     private func startSession() {
         // Check for existing attribution

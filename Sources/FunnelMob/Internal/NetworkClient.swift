@@ -84,12 +84,14 @@ final class NetworkClient {
     func sendEvents(
         _ events: [Event],
         configuration: FunnelMobConfiguration,
+        userId: String? = nil,
         completion: @escaping (Result<Void, NetworkError>) -> Void
     ) {
         let batch = EventBatch(
             platform: "ios",
             deviceId: DeviceInfo().deviceId,
             sessionId: nil, // TODO: Add session tracking
+            userId: userId,
             events: events
         )
 
@@ -139,6 +141,70 @@ final class NetworkClient {
 
         task.resume()
     }
+
+    /// Send an identify request to link a user to a device
+    func sendIdentify(
+        _ request: IdentifyRequest,
+        configuration: FunnelMobConfiguration,
+        completion: @escaping (Result<IdentifyResponse, NetworkError>) -> Void
+    ) {
+        guard let url = URL(string: "\(configuration.server.baseURL)/identify") else {
+            completion(.failure(.invalidURL))
+            return
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(configuration.apiKey, forHTTPHeaderField: "X-FM-API-Key")
+
+        do {
+            urlRequest.httpBody = try encoder.encode(request)
+        } catch {
+            completion(.failure(.encodingError(error)))
+            return
+        }
+
+        let task = session.dataTask(with: urlRequest) { data, response, error in
+            if let error = error {
+                completion(.failure(.networkError(error)))
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(.failure(.invalidResponse))
+                return
+            }
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                guard let data = data else {
+                    completion(.failure(.invalidResponse))
+                    return
+                }
+                do {
+                    let decoder = JSONDecoder()
+                    decoder.keyDecodingStrategy = .convertFromSnakeCase
+                    let identifyResponse = try decoder.decode(IdentifyResponse.self, from: data)
+                    completion(.success(identifyResponse))
+                } catch {
+                    completion(.failure(.encodingError(error)))
+                }
+            case 401:
+                completion(.failure(.unauthorized))
+            case 429:
+                completion(.failure(.rateLimited))
+            case 400...499:
+                completion(.failure(.clientError(httpResponse.statusCode)))
+            case 500...599:
+                completion(.failure(.serverError(httpResponse.statusCode)))
+            default:
+                completion(.failure(.unknownError(httpResponse.statusCode)))
+            }
+        }
+
+        task.resume()
+    }
 }
 
 // MARK: - Models
@@ -147,6 +213,7 @@ struct EventBatch: Encodable {
     let platform: String
     let deviceId: String
     let sessionId: String?
+    let userId: String?
     let events: [Event]
 }
 

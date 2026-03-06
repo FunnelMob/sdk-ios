@@ -144,6 +144,45 @@ struct SessionResponse: Decodable {
     }
 }
 
+/// Identify request payload
+struct IdentifyRequest: Encodable {
+    let deviceId: String
+    let userId: String
+    let platform: String
+    let timestamp: String
+    let userProperties: [String: Any]?
+    let context: DeviceContextPayload?
+
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case userId = "user_id"
+        case platform
+        case timestamp
+        case userProperties = "user_properties"
+        case context
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(deviceId, forKey: .deviceId)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(platform, forKey: .platform)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encodeIfPresent(context, forKey: .context)
+
+        if let userProperties = userProperties {
+            let jsonData = try JSONSerialization.data(withJSONObject: userProperties)
+            let jsonObject = try JSONSerialization.jsonObject(with: jsonData)
+            try container.encode(AnyCodable(jsonObject), forKey: .userProperties)
+        }
+    }
+}
+
+/// Identify response from the server
+struct IdentifyResponse: Decodable {
+    let status: String
+}
+
 /// Wrapper for encoding Any types
 struct AnyCodable: Codable {
     let value: Any
