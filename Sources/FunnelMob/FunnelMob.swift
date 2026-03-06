@@ -6,6 +6,9 @@ import Security
 /// Callback type for attribution results
 public typealias AttributionCallback = (AttributionResult?) -> Void
 
+/// Callback type for remote config loaded events
+public typealias ConfigLoadedCallback = ([String: Any]) -> Void
+
 /// Main entry point for the FunnelMob SDK
 public final class FunnelMob {
 
@@ -21,10 +24,15 @@ public final class FunnelMob {
     private var attributionCallbacks: [AttributionCallback] = []
     private var userId: String?
     private var userProperties: [String: Any]?
+    private var remoteConfig: [String: Any]?
+    private var configCallbacks: [ConfigLoadedCallback] = []
 
     private static let keychainService = "com.funnelmob.attribution"
     private static let keychainAccount = "attribution_result"
     private static let userIdKey = "com.funnelmob.userId"
+    private static let configKey = "com.funnelmob.config"
+    private static let configTimestampKey = "com.funnelmob.config.ts"
+    private static let configCacheTTL: TimeInterval = 300 // 5 minutes
 
     private init() {
         self.eventQueue = EventQueue()
@@ -48,6 +56,8 @@ public final class FunnelMob {
 
         restoreUserId()
         startSession()
+        loadCachedConfig()
+        fetchRemoteConfig()
     }
 
     // MARK: - Attribution
@@ -61,6 +71,42 @@ public final class FunnelMob {
         // If we already have a stored result, fire immediately
         if let stored = loadAttribution() {
             callback(stored)
+        }
+    }
+
+    // MARK: - Remote Config
+
+    /// Get a single remote config value by key.
+    /// - Parameters:
+    ///   - key: The config key
+    /// - Returns: The value, or nil if not found
+    public func getConfig(_ key: String) -> Any? {
+        return remoteConfig?[key]
+    }
+
+    /// Get a single remote config value with a default.
+    /// - Parameters:
+    ///   - key: The config key
+    ///   - defaultValue: Value to return if key not found
+    /// - Returns: The config value or the default
+    public func getConfig<T>(_ key: String, default defaultValue: T) -> T {
+        return (remoteConfig?[key] as? T) ?? defaultValue
+    }
+
+    /// Get all remote config values.
+    /// - Returns: A copy of all config key-value pairs
+    public func getAllConfig() -> [String: Any] {
+        return remoteConfig ?? [:]
+    }
+
+    /// Register a callback that fires when remote config is loaded.
+    /// If config has already been loaded, the callback fires immediately.
+    /// - Parameter callback: Called with the config dictionary
+    public func onConfigLoaded(_ callback: @escaping ConfigLoadedCallback) {
+        configCallbacks.append(callback)
+
+        if let config = remoteConfig {
+            callback(config)
         }
     }
 
@@ -352,6 +398,50 @@ public final class FunnelMob {
             Logger.warning("Failed to encode attribution: \(error)")
         }
         #endif
+    }
+
+    // MARK: - Remote Config (Private)
+
+    private func fetchRemoteConfig() {
+        guard let config = configuration else { return }
+
+        networkClient.fetchConfig(configuration: config) { [weak self] result in
+            guard let self = self else { return }
+
+            switch result {
+            case .success(let configData):
+                self.remoteConfig = configData
+                self.saveCachedConfig(configData)
+                Logger.debug("Remote config loaded")
+                self.notifyConfigCallbacks(configData)
+            case .failure(let error):
+                Logger.error("Failed to fetch remote config: \(error)")
+            }
+        }
+    }
+
+    private func loadCachedConfig() {
+        let defaults = UserDefaults.standard
+        guard let ts = defaults.object(forKey: Self.configTimestampKey) as? Date else { return }
+        guard Date().timeIntervalSince(ts) < Self.configCacheTTL else { return }
+        guard let data = defaults.data(forKey: Self.configKey),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        self.remoteConfig = json
+        Logger.debug("Loaded cached remote config")
+    }
+
+    private func saveCachedConfig(_ config: [String: Any]) {
+        let defaults = UserDefaults.standard
+        if let data = try? JSONSerialization.data(withJSONObject: config) {
+            defaults.set(data, forKey: Self.configKey)
+            defaults.set(Date(), forKey: Self.configTimestampKey)
+        }
+    }
+
+    private func notifyConfigCallbacks(_ config: [String: Any]) {
+        for callback in configCallbacks {
+            callback(config)
+        }
     }
 
     private func validateEventName(_ name: String) -> String? {

@@ -142,6 +142,62 @@ final class NetworkClient {
         task.resume()
     }
 
+    /// Fetch remote config from the API
+    func fetchConfig(
+        configuration: FunnelMobConfiguration,
+        completion: @escaping (Result<[String: Any], NetworkError>) -> Void
+    ) {
+        guard let url = URL(string: "\(configuration.server.baseURL)/config") else {
+            completion(.failure(.invalidURL))
+            return
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "GET"
+        urlRequest.setValue(configuration.apiKey, forHTTPHeaderField: "X-FM-API-Key")
+
+        let task = session.dataTask(with: urlRequest) { data, response, error in
+            if let error = error {
+                completion(.failure(.networkError(error)))
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(.failure(.invalidResponse))
+                return
+            }
+
+            switch httpResponse.statusCode {
+            case 200...299:
+                guard let data = data else {
+                    completion(.failure(.invalidResponse))
+                    return
+                }
+                do {
+                    guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        completion(.failure(.invalidResponse))
+                        return
+                    }
+                    completion(.success(json))
+                } catch {
+                    completion(.failure(.encodingError(error)))
+                }
+            case 401:
+                completion(.failure(.unauthorized))
+            case 429:
+                completion(.failure(.rateLimited))
+            case 400...499:
+                completion(.failure(.clientError(httpResponse.statusCode)))
+            case 500...599:
+                completion(.failure(.serverError(httpResponse.statusCode)))
+            default:
+                completion(.failure(.unknownError(httpResponse.statusCode)))
+            }
+        }
+
+        task.resume()
+    }
+
     /// Send an identify request to link a user to a device
     func sendIdentify(
         _ request: IdentifyRequest,
