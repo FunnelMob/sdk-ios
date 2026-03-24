@@ -462,6 +462,7 @@ public final class FunnelMob {
 public extension FunnelMob {
     /// Standard event names for common actions
     enum StandardEvent {
+        // Legacy fm_-prefixed names (kept for backwards compatibility)
         public static let registration = "fm_registration"
         public static let login = "fm_login"
         public static let purchase = "fm_purchase"
@@ -470,5 +471,189 @@ public extension FunnelMob {
         public static let levelComplete = "fm_level_complete"
         public static let addToCart = "fm_add_to_cart"
         public static let checkout = "fm_checkout"
+
+        // Standard Meta/TikTok event names.
+        // addToCartStandard, purchaseStandard, and subscribeStandard use the Standard
+        // suffix because the legacy fm_-prefixed names already occupy the shorter names above.
+        public static let pageView = "PageView"
+        public static let viewContent = "ViewContent"
+        public static let search = "Search"
+        public static let addToCartStandard = "AddToCart"
+        public static let addToWishlist = "AddToWishlist"
+        public static let initiateCheckout = "InitiateCheckout"
+        public static let addPaymentInfo = "AddPaymentInfo"
+        public static let purchaseStandard = "Purchase"
+        public static let lead = "Lead"
+        public static let completeRegistration = "CompleteRegistration"
+        public static let contact = "Contact"
+        public static let schedule = "Schedule"
+        public static let findLocation = "FindLocation"
+        public static let customizeProduct = "CustomizeProduct"
+        public static let donate = "Donate"
+        public static let submitApplication = "SubmitApplication"
+        public static let applicationApproval = "ApplicationApproval"
+        public static let download = "Download"
+        public static let submitForm = "SubmitForm"
+        public static let startTrial = "StartTrial"
+        public static let subscribeStandard = "Subscribe"
+        public static let achieveLevel = "AchieveLevel"
+        public static let unlockAchievement = "UnlockAchievement"
+        public static let spentCredits = "SpentCredits"
+        public static let rate = "Rate"
+        public static let completeTutorial = "CompleteTutorial"
+        public static let activateApp = "ActivateApp"
+        public static let inAppAdClick = "InAppAdClick"
+        public static let inAppAdImpression = "InAppAdImpression"
+    }
+
+    // MARK: - Typed Standard Event Methods
+
+    /// Meta only — fires on every page load
+    func trackPageView(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("PageView", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — visit to a product detail, landing, or content page
+    func trackViewContent(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("ViewContent", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — search performed on your site or app
+    func trackSearch(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Search", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — item added to shopping cart
+    func trackAddToCart(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("AddToCart", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — item added to wishlist
+    func trackAddToWishlist(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("AddToWishlist", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — start of checkout process
+    func trackInitiateCheckout(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("InitiateCheckout", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — payment info entered during checkout
+    func trackAddPaymentInfo(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("AddPaymentInfo", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — purchase completed; value and currency are required
+    func trackPurchase(value: Double, currency: String, parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Purchase", revenue: FunnelMobRevenue(amount: value, currency: currency), parameters: parameters)
+    }
+
+    /// Meta + TikTok — user submits contact information
+    func trackLead(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Lead", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — user completes a registration or sign-up flow
+    func trackCompleteRegistration(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("CompleteRegistration", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — any contact initiated between user and business
+    func trackContact(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Contact", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — user books an appointment or reservation
+    func trackSchedule(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Schedule", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — user searches for a physical business location
+    func trackFindLocation(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("FindLocation", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — user customizes a product
+    func trackCustomizeProduct(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("CustomizeProduct", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — donation completed; value and currency are required
+    func trackDonate(value: Double, currency: String, parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Donate", revenue: FunnelMobRevenue(amount: value, currency: currency), parameters: parameters)
+    }
+
+    /// Meta + TikTok — user submits an application
+    func trackSubmitApplication(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("SubmitApplication", revenue: nil, parameters: parameters)
+    }
+
+    /// TikTok only — application previously submitted is approved
+    func trackApplicationApproval(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("ApplicationApproval", revenue: nil, parameters: parameters)
+    }
+
+    /// TikTok only — user downloads a file or asset
+    func trackDownload(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Download", revenue: nil, parameters: parameters)
+    }
+
+    /// TikTok legacy — use trackLead() for new implementations
+    func trackSubmitForm(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("SubmitForm", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta + TikTok — user begins a free trial; value and currency are required
+    func trackStartTrial(value: Double, currency: String, parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("StartTrial", revenue: FunnelMobRevenue(amount: value, currency: currency), parameters: parameters)
+    }
+
+    /// Meta + TikTok — user starts a paid subscription; value and currency are required
+    func trackSubscribe(value: Double, currency: String, parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Subscribe", revenue: FunnelMobRevenue(amount: value, currency: currency), parameters: parameters)
+    }
+
+    /// Meta only — user reaches a level in your app or game
+    func trackAchieveLevel(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("AchieveLevel", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — user completes a rewarded action or milestone
+    func trackUnlockAchievement(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("UnlockAchievement", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — user spends in-app credits or virtual currency; value is required.
+    /// Note: value is passed as a parameter (not revenue) because SpentCredits uses
+    /// virtual currency, which has no ISO 4217 currency code.
+    func trackSpentCredits(value: Double, parameters: FunnelMobEventParameters? = nil) {
+        var params = parameters ?? FunnelMobEventParameters()
+        params.set("value", value: value)
+        trackEvent("SpentCredits", revenue: nil, parameters: params)
+    }
+
+    /// Meta only — user submits a rating
+    func trackRate(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Rate", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — user completes an in-app tutorial
+    func trackCompleteTutorial(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("CompleteTutorial", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — app launch or open
+    func trackActivateApp(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("ActivateApp", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — in-app ad clicked by user
+    func trackInAppAdClick(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("InAppAdClick", revenue: nil, parameters: parameters)
+    }
+
+    /// Meta only — in-app ad appeared on-screen
+    func trackInAppAdImpression(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("InAppAdImpression", revenue: nil, parameters: parameters)
     }
 }
