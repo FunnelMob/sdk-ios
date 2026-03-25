@@ -165,7 +165,31 @@ FunnelMob.shared.trackEvent("subscribe", revenue: revenue, parameters: params)
 
 ## Standard Events
 
-Use predefined event names for consistent analytics:
+### Using Typed Methods (Recommended)
+
+29 typed methods provide self-documenting event tracking without needing to remember event name strings:
+
+```swift
+// Simple events
+FunnelMob.shared.trackPageView()
+FunnelMob.shared.trackAddToCart(parameters: ["item_id": "SKU-123", "content_type": "product"])
+
+// Revenue events (value + currency required)
+FunnelMob.shared.trackPurchase(value: 29.99, currency: "USD")
+FunnelMob.shared.trackPurchase(value: 29.99, currency: "USD", parameters: ["order_id": "ORD-456"])
+FunnelMob.shared.trackSubscribe(value: 9.99, currency: "USD")
+FunnelMob.shared.trackStartTrial(value: 0, currency: "USD")
+FunnelMob.shared.trackDonate(value: 10, currency: "USD")
+
+// Spend credits (value only)
+FunnelMob.shared.trackSpentCredits(value: 100)
+```
+
+See [docs/specs/sdk_events_reference.md](../docs/specs/sdk_events_reference.md) for the full list of 29 typed methods with platform support details.
+
+### Using Constants
+
+For custom event handling or when using the generic `trackEvent` API:
 
 ```swift
 FunnelMob.shared.trackEvent(FunnelMob.StandardEvent.registration)
@@ -177,17 +201,6 @@ FunnelMob.shared.trackEvent(FunnelMob.StandardEvent.levelComplete)
 FunnelMob.shared.trackEvent(FunnelMob.StandardEvent.addToCart)
 FunnelMob.shared.trackEvent(FunnelMob.StandardEvent.checkout)
 ```
-
-| Event | Constant | Value |
-|-------|----------|-------|
-| Registration | `FunnelMob.StandardEvent.registration` | `fm_registration` |
-| Login | `FunnelMob.StandardEvent.login` | `fm_login` |
-| Purchase | `FunnelMob.StandardEvent.purchase` | `fm_purchase` |
-| Subscribe | `FunnelMob.StandardEvent.subscribe` | `fm_subscribe` |
-| Tutorial Complete | `FunnelMob.StandardEvent.tutorialComplete` | `fm_tutorial_complete` |
-| Level Complete | `FunnelMob.StandardEvent.levelComplete` | `fm_level_complete` |
-| Add to Cart | `FunnelMob.StandardEvent.addToCart` | `fm_add_to_cart` |
-| Checkout | `FunnelMob.StandardEvent.checkout` | `fm_checkout` |
 
 ## SDK Control
 
