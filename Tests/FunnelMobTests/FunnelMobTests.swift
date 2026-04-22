@@ -16,7 +16,6 @@ final class FunnelMobTests: XCTestCase {
         )
 
         XCTAssertEqual(config.apiKey, "fm_test_key")
-        XCTAssertEqual(config.server, .production)
         XCTAssertEqual(config.logLevel, .none)
         XCTAssertEqual(config.flushInterval, 30.0)
         XCTAssertEqual(config.maxBatchSize, 100)
@@ -26,12 +25,10 @@ final class FunnelMobTests: XCTestCase {
         let config = FunnelMobConfiguration(
             apiKey: "fm_test_key"
         )
-        .with(server: .sandbox)
         .with(logLevel: .debug)
         .with(flushInterval: 10.0)
         .with(maxBatchSize: 50)
 
-        XCTAssertEqual(config.server, .sandbox)
         XCTAssertEqual(config.logLevel, .debug)
         XCTAssertEqual(config.flushInterval, 10.0)
         XCTAssertEqual(config.maxBatchSize, 50)
@@ -112,15 +109,4 @@ final class FunnelMobTests: XCTestCase {
         XCTAssertEqual(dict?["quantity"] as? Int, 2)
     }
 
-    // MARK: - Environment Tests
-
-    func testProductionBaseURL() {
-        let env = FunnelMobConfiguration.Server.production
-        XCTAssertEqual(env.baseURL, "https://api.funnelmob.com/v1")
-    }
-
-    func testSandboxBaseURL() {
-        let env = FunnelMobConfiguration.Server.sandbox
-        XCTAssertEqual(env.baseURL, "https://sandbox.funnelmob.com/v1")
-    }
 }

@@ -6,9 +6,6 @@ public struct FunnelMobConfiguration {
     /// API key for authentication
     public let apiKey: String
 
-    /// Server (production or sandbox)
-    public var server: Server
-
     /// Log level for debugging
     public var logLevel: LogLevel
 
@@ -17,21 +14,6 @@ public struct FunnelMobConfiguration {
 
     /// Maximum number of events per batch
     public var maxBatchSize: Int
-
-    /// Server options
-    public enum Server {
-        case production
-        case sandbox
-
-        var baseURL: String {
-            switch self {
-            case .production:
-                return "https://api.funnelmob.com/v1"
-            case .sandbox:
-                return "https://sandbox.funnelmob.com/v1"
-            }
-        }
-    }
 
     /// Log level options
     public enum LogLevel: Int, Comparable {
@@ -52,7 +34,6 @@ public struct FunnelMobConfiguration {
     ///   - apiKey: API key for authentication
     public init(apiKey: String) {
         self.apiKey = apiKey
-        self.server = .production
         self.logLevel = .none
         self.flushInterval = 30.0
         self.maxBatchSize = 100
@@ -62,13 +43,6 @@ public struct FunnelMobConfiguration {
 // MARK: - Builder Pattern
 
 public extension FunnelMobConfiguration {
-
-    /// Set server
-    func with(server: Server) -> FunnelMobConfiguration {
-        var config = self
-        config.server = server
-        return config
-    }
 
     /// Set log level
     func with(logLevel: LogLevel) -> FunnelMobConfiguration {

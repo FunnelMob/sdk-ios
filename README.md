@@ -87,18 +87,10 @@ let config = FunnelMobConfiguration(
 
 ```swift
 let config = FunnelMobConfiguration(appId: "com.example.myapp", apiKey: "fm_live_abc123")
-    .with(environment: .production)   // Optional: .production (default) or .sandbox
     .with(logLevel: .none)            // Optional: .none, .error, .warning, .info, .debug, .verbose
     .with(flushInterval: 30.0)        // Optional: Auto-flush interval in seconds (min: 1.0, default: 30.0)
     .with(maxBatchSize: 100)          // Optional: Events per batch (1-100, default: 100)
 ```
-
-### Environment Options
-
-| Environment | Base URL |
-|-------------|----------|
-| `.production` | `https://api.funnelmob.com/v1` |
-| `.sandbox` | `https://sandbox.funnelmob.com/v1` |
 
 ## Event Tracking
 
