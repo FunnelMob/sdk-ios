@@ -35,10 +35,7 @@ Then add `FunnelMob` to your target dependencies:
 import FunnelMob
 
 // In your AppDelegate or App init
-let config = FunnelMobConfiguration(
-    appId: "com.example.myapp",
-    apiKey: "fm_live_abc123"
-)
+let config = FunnelMobConfiguration(apiKey: "fm_live_abc123")
 FunnelMob.shared.initialize(with: config)
 
 // Track events anywhere in your app
@@ -57,10 +54,7 @@ import FunnelMob
 @main
 struct MyApp: App {
     init() {
-        let config = FunnelMobConfiguration(
-            appId: "com.example.myapp",
-            apiKey: "fm_live_abc123"
-        )
+        let config = FunnelMobConfiguration(apiKey: "fm_live_abc123")
         FunnelMob.shared.initialize(with: config)
     }
 
@@ -78,19 +72,35 @@ struct MyApp: App {
 
 ```swift
 let config = FunnelMobConfiguration(
-    appId: "com.example.myapp",    // Required: Your app identifier
-    apiKey: "fm_live_abc123"       // Required: Your API key
+    apiKey: "fm_live_abc123"          // Required: Your API key
 )
 ```
 
 ### Full Configuration with Builder
 
 ```swift
-let config = FunnelMobConfiguration(appId: "com.example.myapp", apiKey: "fm_live_abc123")
-    .with(logLevel: .none)            // Optional: .none, .error, .warning, .info, .debug, .verbose
-    .with(flushInterval: 30.0)        // Optional: Auto-flush interval in seconds (min: 1.0, default: 30.0)
-    .with(maxBatchSize: 100)          // Optional: Events per batch (1-100, default: 100)
+let config = FunnelMobConfiguration(apiKey: "fm_live_abc123")
+    .with(logLevel: .none)               // Optional: .none, .error, .warning, .info, .debug, .verbose
+    .with(flushInterval: 30.0)           // Optional: Auto-flush interval in seconds (min: 1.0, default: 30.0)
+    .with(maxBatchSize: 100)             // Optional: Events per batch (1-100, default: 100)
+    .with(customURL: "http://localhost:3080")  // Optional: Override the API host (default: https://api.funnelmob.com)
 ```
+
+### Custom Base URL
+
+By default the SDK calls `https://api.funnelmob.com`, appending `/v1/<endpoint>`
+to each request. Pass `customURL` to point at a different host (typically for
+local development against a backend running on your dev machine):
+
+```swift
+let config = FunnelMobConfiguration(apiKey: "fm_test_key")
+    // From the iOS simulator, localhost is the host machine.
+    .with(customURL: "http://localhost:3080")
+```
+
+Pass the **host root only** — the SDK appends `/v1` itself, so
+`http://localhost:3080` (not `http://localhost:3080/v1`). Trailing slashes are
+trimmed automatically.
 
 ## Event Tracking
 
@@ -246,7 +256,7 @@ FunnelMobRevenue(amount: 29.99, currency: "usd")  // Converted to "USD"
 Errors are logged rather than thrown. Set `logLevel` to see validation errors:
 
 ```swift
-let config = FunnelMobConfiguration(appId: "...", apiKey: "...")
+let config = FunnelMobConfiguration(apiKey: "...")
     .with(logLevel: .debug)  // See validation errors in console
 
 FunnelMob.shared.initialize(with: config)

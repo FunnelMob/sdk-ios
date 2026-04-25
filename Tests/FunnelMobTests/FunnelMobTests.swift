@@ -19,6 +19,40 @@ final class FunnelMobTests: XCTestCase {
         XCTAssertEqual(config.logLevel, .none)
         XCTAssertEqual(config.flushInterval, 30.0)
         XCTAssertEqual(config.maxBatchSize, 100)
+        XCTAssertNil(config.customURL)
+    }
+
+    func testCustomURLDefaultsToProduction() {
+        let config = FunnelMobConfiguration(apiKey: "fm_test_key")
+
+        XCTAssertNil(config.customURL)
+        XCTAssertEqual(defaultBaseURL, "https://api.funnelmob.com")
+        XCTAssertEqual(resolveBaseURL(config), "https://api.funnelmob.com/v1")
+    }
+
+    func testCustomURLOverride() {
+        let config = FunnelMobConfiguration(apiKey: "fm_test_key")
+            .with(customURL: "http://localhost:3080")
+
+        XCTAssertEqual(config.customURL, "http://localhost:3080")
+        XCTAssertEqual(resolveBaseURL(config), "http://localhost:3080/v1")
+    }
+
+    func testCustomURLTrailingSlashTrimmed() {
+        let config = FunnelMobConfiguration(apiKey: "fm_test_key")
+            .with(customURL: "http://localhost:3080/")
+
+        XCTAssertEqual(config.customURL, "http://localhost:3080")
+        XCTAssertEqual(resolveBaseURL(config), "http://localhost:3080/v1")
+    }
+
+    func testCustomURLNilClearsOverride() {
+        let config = FunnelMobConfiguration(apiKey: "fm_test_key")
+            .with(customURL: "http://localhost:3080")
+            .with(customURL: nil)
+
+        XCTAssertNil(config.customURL)
+        XCTAssertEqual(resolveBaseURL(config), "https://api.funnelmob.com/v1")
     }
 
     func testConfigurationBuilder() {

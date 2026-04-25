@@ -15,6 +15,13 @@ public struct FunnelMobConfiguration {
     /// Maximum number of events per batch
     public var maxBatchSize: Int
 
+    /// Optional override for the API base URL. When `nil`, the SDK uses the
+    /// production endpoint (`https://api.funnelmob.com`). The SDK appends
+    /// `/v1/<endpoint>` itself, so pass the host root only
+    /// (e.g. `http://localhost:3080` for the iOS simulator). Trailing
+    /// slashes are stripped.
+    public var customURL: String?
+
     /// Log level options
     public enum LogLevel: Int, Comparable {
         case none = 0
@@ -37,6 +44,7 @@ public struct FunnelMobConfiguration {
         self.logLevel = .none
         self.flushInterval = 30.0
         self.maxBatchSize = 100
+        self.customURL = nil
     }
 }
 
@@ -62,6 +70,23 @@ public extension FunnelMobConfiguration {
     func with(maxBatchSize: Int) -> FunnelMobConfiguration {
         var config = self
         config.maxBatchSize = min(100, max(1, maxBatchSize))
+        return config
+    }
+
+    /// Override the API base URL. Pass the host root without `/v1`
+    /// (e.g. `http://localhost:3080` from the iOS simulator pointing at
+    /// a backend on the host machine). Trailing slashes are trimmed.
+    func with(customURL: String?) -> FunnelMobConfiguration {
+        var config = self
+        if let url = customURL {
+            var trimmed = url
+            while trimmed.hasSuffix("/") {
+                trimmed.removeLast()
+            }
+            config.customURL = trimmed.isEmpty ? nil : trimmed
+        } else {
+            config.customURL = nil
+        }
         return config
     }
 }
