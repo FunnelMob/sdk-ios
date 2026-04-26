@@ -2,6 +2,9 @@ import Foundation
 #if canImport(Security)
 import Security
 #endif
+#if canImport(UIKit) && !os(watchOS)
+import UIKit
+#endif
 
 /// Callback type for attribution results
 public typealias AttributionCallback = (AttributionResult?) -> Void
@@ -27,6 +30,7 @@ public final class FunnelMob {
     private var remoteConfig: [String: Any]?
     private var configCallbacks: [ConfigLoadedCallback] = []
     private var flushTimer: DispatchSourceTimer?
+    private var lifecycleObservers: [NSObjectProtocol] = []
 
     private static let keychainService = "com.funnelmob.attribution"
     private static let keychainAccount = "attribution_result"
@@ -60,6 +64,7 @@ public final class FunnelMob {
         loadCachedConfig()
         fetchRemoteConfig()
         startFlushTimer(interval: configuration.flushInterval)
+        registerLifecycleObservers()
     }
 
     // MARK: - Attribution
@@ -171,8 +176,12 @@ public final class FunnelMob {
             attributionId: attributionId
         )
 
-        eventQueue.enqueue(event)
+        let queueSize = eventQueue.enqueue(event)
         Logger.debug("Event queued: \(name)")
+
+        if let config = configuration, queueSize >= config.maxBatchSize {
+            flush()
+        }
     }
 
     // MARK: - Control
@@ -413,6 +422,62 @@ public final class FunnelMob {
         flushTimer = timer
         timer.resume()
     }
+
+    // MARK: - Lifecycle Observers
+
+    private func registerLifecycleObservers() {
+        #if canImport(UIKit) && !os(watchOS)
+        let center = NotificationCenter.default
+
+        let backgroundToken = center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.flushOnBackground()
+        }
+
+        let foregroundToken = center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.flush()
+        }
+
+        let terminateToken = center.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.flush()
+        }
+
+        lifecycleObservers = [backgroundToken, foregroundToken, terminateToken]
+        #endif
+    }
+
+    #if canImport(UIKit) && !os(watchOS)
+    private func flushOnBackground() {
+        let app = UIApplication.shared
+        var taskId: UIBackgroundTaskIdentifier = .invalid
+        taskId = app.beginBackgroundTask(withName: "com.funnelmob.flush") {
+            if taskId != .invalid {
+                app.endBackgroundTask(taskId)
+                taskId = .invalid
+            }
+        }
+
+        flush()
+
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) {
+            if taskId != .invalid {
+                app.endBackgroundTask(taskId)
+                taskId = .invalid
+            }
+        }
+    }
+    #endif
 
     // MARK: - Remote Config (Private)
 

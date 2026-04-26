@@ -11,13 +11,15 @@ final class EventQueue {
         loadPersistedEvents()
     }
 
-    /// Add event to queue
-    func enqueue(_ event: Event) {
+    /// Add event to queue. Returns the new queue size.
+    @discardableResult
+    func enqueue(_ event: Event) -> Int {
         lock.lock()
         defer { lock.unlock() }
 
         events.append(event)
         persistEvents()
+        return events.count
     }
 
     /// Get and remove events for sending
