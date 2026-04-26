@@ -59,12 +59,23 @@ public final class FunnelMob {
         Logger.logLevel = configuration.logLevel
         Logger.info("FunnelMob initialized")
 
+        let isFirstLaunch = loadAttribution() == nil
+
         restoreUserId()
         startSession()
         loadCachedConfig()
         fetchRemoteConfig()
         startFlushTimer(interval: configuration.flushInterval)
         registerLifecycleObservers()
+
+        if isFirstLaunch {
+            trackInstall()
+            var launchParams = FunnelMobEventParameters()
+            launchParams.set("is_first_session", value: true)
+            trackActivateApp(parameters: launchParams)
+        } else {
+            trackActivateApp()
+        }
     }
 
     // MARK: - Attribution
@@ -539,29 +550,21 @@ public final class FunnelMob {
 // MARK: - Standard Events
 
 public extension FunnelMob {
-    /// Standard event names for common actions
+    /// Standard event names for common actions.
+    /// Names mirror Meta/TikTok Standard Events verbatim so the postback layer
+    /// does not need to translate. `Install` and `ActivateApp` are mobile
+    /// lifecycle events fired automatically by `initialize(with:)`.
     enum StandardEvent {
-        // Legacy fm_-prefixed names (kept for backwards compatibility)
-        public static let registration = "fm_registration"
-        public static let login = "fm_login"
-        public static let purchase = "fm_purchase"
-        public static let subscribe = "fm_subscribe"
-        public static let tutorialComplete = "fm_tutorial_complete"
-        public static let levelComplete = "fm_level_complete"
-        public static let addToCart = "fm_add_to_cart"
-        public static let checkout = "fm_checkout"
-
-        // Standard Meta/TikTok event names.
-        // addToCartStandard, purchaseStandard, and subscribeStandard use the Standard
-        // suffix because the legacy fm_-prefixed names already occupy the shorter names above.
+        public static let install = "Install"
+        public static let activateApp = "ActivateApp"
         public static let pageView = "PageView"
         public static let viewContent = "ViewContent"
         public static let search = "Search"
-        public static let addToCartStandard = "AddToCart"
+        public static let addToCart = "AddToCart"
         public static let addToWishlist = "AddToWishlist"
         public static let initiateCheckout = "InitiateCheckout"
         public static let addPaymentInfo = "AddPaymentInfo"
-        public static let purchaseStandard = "Purchase"
+        public static let purchase = "Purchase"
         public static let lead = "Lead"
         public static let completeRegistration = "CompleteRegistration"
         public static let contact = "Contact"
@@ -574,13 +577,12 @@ public extension FunnelMob {
         public static let download = "Download"
         public static let submitForm = "SubmitForm"
         public static let startTrial = "StartTrial"
-        public static let subscribeStandard = "Subscribe"
+        public static let subscribe = "Subscribe"
         public static let achieveLevel = "AchieveLevel"
         public static let unlockAchievement = "UnlockAchievement"
         public static let spentCredits = "SpentCredits"
         public static let rate = "Rate"
         public static let completeTutorial = "CompleteTutorial"
-        public static let activateApp = "ActivateApp"
         public static let inAppAdClick = "InAppAdClick"
         public static let inAppAdImpression = "InAppAdImpression"
     }
@@ -721,7 +723,15 @@ public extension FunnelMob {
         trackEvent("CompleteTutorial", revenue: nil, parameters: parameters)
     }
 
-    /// Meta only — app launch or open
+    /// First-launch install event. Maps to Meta's `Install` event in CAPI and
+    /// TikTok's `InstallApp` in Events API. Fired automatically by
+    /// `initialize(with:)` on the device's first ever launch.
+    func trackInstall(parameters: FunnelMobEventParameters? = nil) {
+        trackEvent("Install", revenue: nil, parameters: parameters)
+    }
+
+    /// App launch / activate. Fired automatically by `initialize(with:)` on
+    /// every cold start.
     func trackActivateApp(parameters: FunnelMobEventParameters? = nil) {
         trackEvent("ActivateApp", revenue: nil, parameters: parameters)
     }
