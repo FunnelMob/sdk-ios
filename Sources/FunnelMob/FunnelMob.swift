@@ -26,6 +26,7 @@ public final class FunnelMob {
     private var userProperties: [String: Any]?
     private var remoteConfig: [String: Any]?
     private var configCallbacks: [ConfigLoadedCallback] = []
+    private var flushTimer: DispatchSourceTimer?
 
     private static let keychainService = "com.funnelmob.attribution"
     private static let keychainAccount = "attribution_result"
@@ -58,6 +59,7 @@ public final class FunnelMob {
         startSession()
         loadCachedConfig()
         fetchRemoteConfig()
+        startFlushTimer(interval: configuration.flushInterval)
     }
 
     // MARK: - Attribution
@@ -398,6 +400,18 @@ public final class FunnelMob {
             Logger.warning("Failed to encode attribution: \(error)")
         }
         #endif
+    }
+
+    // MARK: - Flush Timer
+
+    private func startFlushTimer(interval: TimeInterval) {
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.setEventHandler { [weak self] in
+            self?.flush()
+        }
+        flushTimer = timer
+        timer.resume()
     }
 
     // MARK: - Remote Config (Private)
