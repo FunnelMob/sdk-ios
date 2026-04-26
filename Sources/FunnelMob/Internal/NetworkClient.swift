@@ -1,21 +1,13 @@
 import Foundation
 
-/// Default base URL for the FunnelMob API. Used when
-/// `FunnelMobConfiguration.customURL` is nil. Prefixed `fm` to keep the
-/// module-internal symbol from clashing with anything else in the target.
 let fmDefaultBaseURL = "https://api.funnelmob.com"
 
-/// Resolves the base URL for the SDK to call, including the `/v1` API
-/// version segment. Trims trailing slashes from a custom override
-/// (defense-in-depth — `with(customURL:)` also trims at construction time).
+/// Resolves the SDK base URL plus `/v1`. `customURL` is also trimmed at
+/// construction time, but we re-trim here so a hand-set override stays sane.
 func fmResolveBaseURL(_ configuration: FunnelMobConfiguration) -> String {
-    var root = configuration.customURL ?? fmDefaultBaseURL
-    while root.hasSuffix("/") {
-        root.removeLast()
-    }
-    if root.isEmpty {
-        root = fmDefaultBaseURL
-    }
+    let trimmed = (configuration.customURL ?? fmDefaultBaseURL)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    let root = trimmed.isEmpty ? fmDefaultBaseURL : trimmed
     return "\(root)/v1"
 }
 
