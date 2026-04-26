@@ -1,18 +1,20 @@
 import Foundation
 
 /// Default base URL for the FunnelMob API. Used when
-/// `FunnelMobConfiguration.customURL` is nil.
-let defaultBaseURL = "https://api.funnelmob.com"
+/// `FunnelMobConfiguration.customURL` is nil. Prefixed `fm` to keep the
+/// module-internal symbol from clashing with anything else in the target.
+let fmDefaultBaseURL = "https://api.funnelmob.com"
 
 /// Resolves the base URL for the SDK to call, including the `/v1` API
-/// version segment. Trims trailing slashes from a custom override.
-func resolveBaseURL(_ configuration: FunnelMobConfiguration) -> String {
-    var root = configuration.customURL ?? defaultBaseURL
+/// version segment. Trims trailing slashes from a custom override
+/// (defense-in-depth — `with(customURL:)` also trims at construction time).
+func fmResolveBaseURL(_ configuration: FunnelMobConfiguration) -> String {
+    var root = configuration.customURL ?? fmDefaultBaseURL
     while root.hasSuffix("/") {
         root.removeLast()
     }
     if root.isEmpty {
-        root = defaultBaseURL
+        root = fmDefaultBaseURL
     }
     return "\(root)/v1"
 }
@@ -39,7 +41,7 @@ final class NetworkClient {
         configuration: FunnelMobConfiguration,
         completion: @escaping (Result<SessionResponse, NetworkError>) -> Void
     ) {
-        guard let url = URL(string: "\(resolveBaseURL(configuration))/session") else {
+        guard let url = URL(string: "\(fmResolveBaseURL(configuration))/session") else {
             completion(.failure(.invalidURL))
             return
         }
@@ -112,7 +114,7 @@ final class NetworkClient {
             events: events
         )
 
-        guard let url = URL(string: "\(resolveBaseURL(configuration))/events") else {
+        guard let url = URL(string: "\(fmResolveBaseURL(configuration))/events") else {
             completion(.failure(.invalidURL))
             return
         }
@@ -164,7 +166,7 @@ final class NetworkClient {
         configuration: FunnelMobConfiguration,
         completion: @escaping (Result<[String: Any], NetworkError>) -> Void
     ) {
-        guard let url = URL(string: "\(resolveBaseURL(configuration))/config") else {
+        guard let url = URL(string: "\(fmResolveBaseURL(configuration))/config") else {
             completion(.failure(.invalidURL))
             return
         }
@@ -221,7 +223,7 @@ final class NetworkClient {
         configuration: FunnelMobConfiguration,
         completion: @escaping (Result<IdentifyResponse, NetworkError>) -> Void
     ) {
-        guard let url = URL(string: "\(resolveBaseURL(configuration))/identify") else {
+        guard let url = URL(string: "\(fmResolveBaseURL(configuration))/identify") else {
             completion(.failure(.invalidURL))
             return
         }
