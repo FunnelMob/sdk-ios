@@ -22,6 +22,19 @@ public struct FunnelMobConfiguration {
     /// slashes are stripped.
     public var customURL: String?
 
+    /// Whether the SDK starts its active components (attribution session,
+    /// flush timer, lifecycle observers, automatic Install/ActivateApp events,
+    /// remote config fetch) immediately when `initialize(with:)` is called.
+    ///
+    /// Defaults to `true`. Set to `false` when you need to defer the SDK's
+    /// network and event activity until you have obtained user consent
+    /// (e.g., ATT, GDPR). When `false`, you must call
+    /// `FunnelMob.shared.start()` after consent is granted.
+    ///
+    /// By calling `start()` you represent that you have obtained any user
+    /// consent required by applicable law.
+    public var autoStart: Bool
+
     /// Log level options
     public enum LogLevel: Int, Comparable {
         case none = 0
@@ -45,6 +58,7 @@ public struct FunnelMobConfiguration {
         self.flushInterval = 30.0
         self.maxBatchSize = 100
         self.customURL = nil
+        self.autoStart = true
     }
 }
 
@@ -87,6 +101,15 @@ public extension FunnelMobConfiguration {
         } else {
             config.customURL = nil
         }
+        return config
+    }
+
+    /// Configure whether the SDK starts automatically on `initialize(with:)`.
+    /// Pass `false` to defer all network activity and event tracking until
+    /// `FunnelMob.shared.start()` is called.
+    func with(autoStart: Bool) -> FunnelMobConfiguration {
+        var config = self
+        config.autoStart = autoStart
         return config
     }
 }

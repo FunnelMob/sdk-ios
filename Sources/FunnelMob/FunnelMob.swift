@@ -20,6 +20,7 @@ public final class FunnelMob {
 
     private var configuration: FunnelMobConfiguration?
     private var isEnabled = true
+    private var isStarted = false
     private let eventQueue: EventQueue
     private let networkClient: NetworkClient
     private let deviceInfo: DeviceInfo
@@ -31,6 +32,23 @@ public final class FunnelMob {
     private var configCallbacks: [ConfigLoadedCallback] = []
     private var flushTimer: DispatchSourceTimer?
     private var lifecycleObservers: [NSObjectProtocol] = []
+
+    // MARK: - User identifiers (Meta CAPI / TikTok Events identity-graph signals)
+    //
+    // Stored in memory only — never persisted. Hosts re-supply on each
+    // launch (typically by re-reading from their auth/consent state). IDFA
+    // explicitly should NOT be persisted because ATT can be revoked between
+    // sessions.
+    private var idfa: String?
+    private var hashedEmail: String?
+    private var hashedPhone: String?
+    private var hashedExternalId: String?
+    private var attStatus: ATTStatus?
+    private var isIdentifierDirty = false
+    private var isReFireInFlight = false
+    private var identifierDebounceTimer: DispatchSourceTimer?
+    private let identifierQueue = DispatchQueue(label: "com.funnelmob.identifiers")
+    private static let identifierDebounceMs: Int = 1000
 
     private static let keychainService = "com.funnelmob.attribution"
     private static let keychainAccount = "attribution_result"
@@ -47,7 +65,16 @@ public final class FunnelMob {
 
     // MARK: - Initialization
 
-    /// Initialize the SDK with configuration
+    /// Initialize the SDK with configuration.
+    ///
+    /// When `configuration.autoStart` is `true` (the default), this method
+    /// also calls `start()` to begin attribution, the flush timer, lifecycle
+    /// observers, and Install/ActivateApp events.
+    ///
+    /// When `configuration.autoStart` is `false`, this method only wires up
+    /// internal state (no network activity, no event tracking). Call
+    /// `start()` explicitly once you have obtained any user consent
+    /// required by applicable law.
     /// - Parameter configuration: SDK configuration
     public func initialize(with configuration: FunnelMobConfiguration) {
         guard self.configuration == nil else {
@@ -59,11 +86,42 @@ public final class FunnelMob {
         Logger.logLevel = configuration.logLevel
         Logger.info("FunnelMob initialized")
 
+        restoreUserId()
+        loadCachedConfig()
+
+        if configuration.autoStart {
+            start()
+        } else {
+            Logger.info("autoStart disabled — call FunnelMob.shared.start() when ready")
+        }
+    }
+
+    /// Start the SDK's active components: attribution session, remote config
+    /// fetch, flush timer, lifecycle observers, and the automatic
+    /// Install/ActivateApp events.
+    ///
+    /// Called automatically by `initialize(with:)` when
+    /// `Configuration.autoStart` is `true` (the default). When `autoStart`
+    /// is `false`, the host application must call `start()` explicitly —
+    /// typically after obtaining user consent (ATT, GDPR, CCPA, etc.).
+    ///
+    /// By calling `start()`, you represent that you have obtained any user
+    /// consent required by applicable law for the data the SDK will collect
+    /// and transmit.
+    public func start() {
+        guard let configuration = configuration else {
+            Logger.error("FunnelMob not initialized. Call initialize(with:) first.")
+            return
+        }
+        guard !isStarted else {
+            Logger.warning("FunnelMob already started")
+            return
+        }
+        isStarted = true
+
         let isFirstLaunch = loadAttribution() == nil
 
-        restoreUserId()
         startSession()
-        loadCachedConfig()
         fetchRemoteConfig()
         startFlushTimer(interval: configuration.flushInterval)
         registerLifecycleObservers()
@@ -169,6 +227,11 @@ public final class FunnelMob {
 
         guard configuration != nil else {
             Logger.error("FunnelMob not initialized. Call initialize(with:) first.")
+            return
+        }
+
+        guard isStarted else {
+            Logger.debug("FunnelMob not started, ignoring event: \(name)")
             return
         }
 
@@ -316,20 +379,7 @@ public final class FunnelMob {
     private func requestAttribution() {
         guard let config = configuration else { return }
 
-        let context = deviceInfo.toContext()
-        let request = SessionRequest(
-            deviceId: deviceInfo.deviceId,
-            sessionId: UUID().uuidString,
-            platform: "ios",
-            timestamp: ISO8601DateFormatter.funnelMob.string(from: Date()),
-            isFirstSession: true,
-            context: DeviceContextPayload(
-                osVersion: context.osVersion,
-                deviceModel: context.deviceModel,
-                locale: context.locale,
-                timezone: context.timezone
-            )
-        )
+        let request = buildSessionRequest(isFirstSession: true)
 
         networkClient.sendSession(request, configuration: config) { [weak self] result in
             guard let self = self else { return }
@@ -347,6 +397,168 @@ public final class FunnelMob {
             case .failure(let error):
                 Logger.error("Attribution request failed: \(error)")
                 self.notifyCallbacks(nil)
+            }
+        }
+    }
+
+    /// Build a `SessionRequest` populated with the current in-memory
+    /// identifier set. Shared between the first-session attribution path
+    /// and the debounced re-fire path so both produce identically-shaped
+    /// payloads.
+    private func buildSessionRequest(isFirstSession: Bool) -> SessionRequest {
+        let context = deviceInfo.toContext()
+        return SessionRequest(
+            deviceId: deviceInfo.deviceId,
+            sessionId: UUID().uuidString,
+            platform: "ios",
+            timestamp: ISO8601DateFormatter.funnelMob.string(from: Date()),
+            isFirstSession: isFirstSession,
+            context: DeviceContextPayload(
+                osVersion: context.osVersion,
+                deviceModel: context.deviceModel,
+                locale: context.locale,
+                timezone: context.timezone
+            ),
+            idfa: idfa,
+            gaid: nil,
+            fbp: nil,
+            fbc: nil,
+            emailSha256: hashedEmail,
+            phoneSha256: hashedPhone,
+            externalIdSha256: hashedExternalId,
+            attStatus: attStatus?.rawValue
+        )
+    }
+
+    // MARK: - User identifier setters
+
+    /// Set the device's IDFA (iOS Apple Advertising Identifier). Pass the
+    /// UUID string the host read from `ASIdentifierManager` after the user
+    /// granted ATT consent. Pass `nil` to remove the value from the SDK's
+    /// in-memory map.
+    ///
+    /// The SDK never reads IDFA itself — calling this method is the host's
+    /// affirmative representation that ATT consent was granted.
+    public func setIDFA(_ idfa: String?) {
+        self.idfa = idfa
+        Logger.debug("IDFA \(idfa == nil ? "cleared" : "set")")
+        markIdentifierDirty()
+    }
+
+    /// Set the SHA256-hex hash of the user's email (lowercase + trim, then
+    /// SHA256). Forwarded to Meta CAPI as `user_data.em` and TikTok Events
+    /// as `user.email`. The SDK never sees the raw value — the host is
+    /// responsible for normalization and hashing.
+    public func setHashedEmail(_ sha256: String?) {
+        self.hashedEmail = sha256
+        Logger.debug("Hashed email \(sha256 == nil ? "cleared" : "set")")
+        markIdentifierDirty()
+    }
+
+    /// Set the SHA256-hex hash of the user's phone number (E.164 format
+    /// pre-hash, e.g. `+12025551234`). Forwarded to Meta CAPI as
+    /// `user_data.ph` and TikTok Events as `user.phone`.
+    public func setHashedPhone(_ sha256: String?) {
+        self.hashedPhone = sha256
+        Logger.debug("Hashed phone \(sha256 == nil ? "cleared" : "set")")
+        markIdentifierDirty()
+    }
+
+    /// Set the SHA256-hex hash of an external user identifier (CRM ID,
+    /// auth user ID). Forwarded as `external_id` to both Meta and TikTok
+    /// for cross-event matching against the host's user graph.
+    public func setHashedExternalId(_ sha256: String?) {
+        self.hashedExternalId = sha256
+        Logger.debug("Hashed external_id \(sha256 == nil ? "cleared" : "set")")
+        markIdentifierDirty()
+    }
+
+    /// Record the current ATT authorization status. Persisted on the
+    /// device row for audit purposes; not forwarded to ad networks
+    /// directly. The SDK does not import `AppTrackingTransparency` — the
+    /// host reads `ATTrackingManager.trackingAuthorizationStatus` and
+    /// passes the equivalent `ATTStatus` case.
+    public func setATTStatus(_ status: ATTStatus) {
+        self.attStatus = status
+        Logger.debug("ATT status set: \(status.rawValue)")
+        markIdentifierDirty()
+    }
+
+    /// Bypass the 1-second debounce and immediately fire a `/v1/session`
+    /// re-fire if any identifier has changed since the last successful
+    /// POST. No-op if not started or not dirty. Useful for tests and for
+    /// hosts that want a synchronous confirmation point after setting
+    /// identifiers (e.g. immediately after ATT response).
+    public func flushIdentifiers() {
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.identifierDebounceTimer?.cancel()
+            self.identifierDebounceTimer = nil
+            self.triggerIdentifierReFire()
+        }
+    }
+
+    // MARK: - Identifier debounce + re-fire (private)
+
+    /// Mark the in-memory identifier set as dirty and schedule a debounced
+    /// re-fire. Called by every setter. No-op while `isStarted == false`
+    /// (the values are buffered and ride on the first `start()` POST) or
+    /// while a re-fire is already in flight (handled on POST completion).
+    private func markIdentifierDirty() {
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.isIdentifierDirty = true
+            guard self.isStarted else { return }
+            guard !self.isReFireInFlight else { return }
+            self.scheduleDebounce()
+        }
+    }
+
+    /// Cancel any pending debounce timer and start a fresh one. Must be
+    /// called on `identifierQueue`.
+    private func scheduleDebounce() {
+        identifierDebounceTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: identifierQueue)
+        let intervalMs = Self.identifierDebounceMs
+        timer.schedule(deadline: .now() + .milliseconds(intervalMs))
+        timer.setEventHandler { [weak self] in
+            self?.identifierDebounceTimer = nil
+            self?.triggerIdentifierReFire()
+        }
+        identifierDebounceTimer = timer
+        timer.resume()
+    }
+
+    /// Send the re-fire if dirty + started. Must be called on
+    /// `identifierQueue`. Marks `isReFireInFlight` for the duration of
+    /// the POST; on completion, re-checks `isIdentifierDirty` and
+    /// schedules another debounce if a setter fired during the in-flight
+    /// window.
+    private func triggerIdentifierReFire() {
+        guard isStarted else { return }
+        guard isIdentifierDirty else { return }
+        guard let config = configuration else { return }
+
+        isReFireInFlight = true
+        isIdentifierDirty = false
+
+        let request = buildSessionRequest(isFirstSession: false)
+
+        networkClient.sendSession(request, configuration: config) { [weak self] result in
+            guard let self = self else { return }
+            self.identifierQueue.async {
+                self.isReFireInFlight = false
+                switch result {
+                case .success:
+                    Logger.debug("Identifier re-fire succeeded")
+                case .failure(let error):
+                    // Restore dirty so foreground hook + next setter recover.
+                    self.isIdentifierDirty = true
+                    Logger.warning("Identifier re-fire failed: \(error)")
+                }
+                if self.isIdentifierDirty {
+                    self.scheduleDebounce()
+                }
             }
         }
     }
@@ -454,6 +666,9 @@ public final class FunnelMob {
             queue: nil
         ) { [weak self] _ in
             self?.flush()
+            // Recover any pending identifier re-fire that lost a previous
+            // POST attempt while the app was backgrounded.
+            self?.flushIdentifiers()
         }
 
         let terminateToken = center.addObserver(

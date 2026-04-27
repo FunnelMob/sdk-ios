@@ -120,6 +120,26 @@ struct SessionRequest: Encodable {
     let timestamp: String
     let isFirstSession: Bool
     let context: DeviceContextPayload?
+    /// Apple Advertising Identifier. The SDK never reads this itself —
+    /// the host application reads it after ATT consent and passes it via
+    /// `setIDFA(_:)`.
+    let idfa: String?
+    /// Google Advertising ID. iOS SDK exposes the field for cross-platform
+    /// API symmetry but it's always nil on iOS.
+    let gaid: String?
+    /// Meta browser cookie `_fbp`. Always nil on iOS (web-only).
+    let fbp: String?
+    /// Meta click cookie `_fbc`. Always nil on iOS (web-only).
+    let fbc: String?
+    /// SHA256-hex of normalized email (lowercased, trimmed). Pre-hashed by
+    /// the host — the SDK never sees raw PII.
+    let emailSha256: String?
+    /// SHA256-hex of normalized phone (E.164 format pre-hash).
+    let phoneSha256: String?
+    /// SHA256-hex of an external user identifier (CRM / auth user ID).
+    let externalIdSha256: String?
+    /// iOS ATT status: "authorized" | "denied" | "restricted" | "notDetermined".
+    let attStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case deviceId = "device_id"
@@ -128,6 +148,32 @@ struct SessionRequest: Encodable {
         case timestamp
         case isFirstSession = "is_first_session"
         case context
+        case idfa
+        case gaid
+        case fbp
+        case fbc
+        case emailSha256 = "email_sha256"
+        case phoneSha256 = "phone_sha256"
+        case externalIdSha256 = "external_id_sha256"
+        case attStatus = "att_status"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(deviceId, forKey: .deviceId)
+        try container.encode(sessionId, forKey: .sessionId)
+        try container.encode(platform, forKey: .platform)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(isFirstSession, forKey: .isFirstSession)
+        try container.encodeIfPresent(context, forKey: .context)
+        try container.encodeIfPresent(idfa, forKey: .idfa)
+        try container.encodeIfPresent(gaid, forKey: .gaid)
+        try container.encodeIfPresent(fbp, forKey: .fbp)
+        try container.encodeIfPresent(fbc, forKey: .fbc)
+        try container.encodeIfPresent(emailSha256, forKey: .emailSha256)
+        try container.encodeIfPresent(phoneSha256, forKey: .phoneSha256)
+        try container.encodeIfPresent(externalIdSha256, forKey: .externalIdSha256)
+        try container.encodeIfPresent(attStatus, forKey: .attStatus)
     }
 }
 
