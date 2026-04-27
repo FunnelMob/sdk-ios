@@ -379,24 +379,37 @@ public final class FunnelMob {
     private func requestAttribution() {
         guard let config = configuration else { return }
 
-        let request = buildSessionRequest(isFirstSession: true)
-
-        networkClient.sendSession(request, configuration: config) { [weak self] result in
+        // Build the request and clear the dirty bit on identifierQueue so the
+        // identifier snapshot is consistent with concurrent setters. Setters
+        // that fire during the in-flight POST set dirty back to true and the
+        // next foreground/setter schedules a re-fire.
+        identifierQueue.async { [weak self] in
             guard let self = self else { return }
+            let wasDirty = self.isIdentifierDirty
+            self.isIdentifierDirty = false
+            let request = self.buildSessionRequest(isFirstSession: true)
 
-            switch result {
-            case .success(let response):
-                if let attribution = response.attribution {
-                    self.attributionId = attribution.attributionId
-                    self.saveAttribution(attribution)
-                    Logger.info("Attribution received")
-                    self.notifyCallbacks(attribution)
-                } else {
+            self.networkClient.sendSession(request, configuration: config) { [weak self] result in
+                guard let self = self else { return }
+
+                switch result {
+                case .success(let response):
+                    if let attribution = response.attribution {
+                        self.attributionId = attribution.attributionId
+                        self.saveAttribution(attribution)
+                        Logger.info("Attribution received")
+                        self.notifyCallbacks(attribution)
+                    } else {
+                        self.notifyCallbacks(nil)
+                    }
+                case .failure(let error):
+                    Logger.error("Attribution request failed: \(error)")
                     self.notifyCallbacks(nil)
+                    // Restore dirty so a foreground hook / next setter re-fires.
+                    self.identifierQueue.async {
+                        if wasDirty { self.isIdentifierDirty = true }
+                    }
                 }
-            case .failure(let error):
-                Logger.error("Attribution request failed: \(error)")
-                self.notifyCallbacks(nil)
             }
         }
     }
@@ -440,9 +453,12 @@ public final class FunnelMob {
     /// The SDK never reads IDFA itself — calling this method is the host's
     /// affirmative representation that ATT consent was granted.
     public func setIDFA(_ idfa: String?) {
-        self.idfa = idfa
-        Logger.debug("IDFA \(idfa == nil ? "cleared" : "set")")
-        markIdentifierDirty()
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.idfa = idfa
+            Logger.debug("IDFA \(idfa == nil ? "cleared" : "set")")
+            self.markIdentifierDirtyOnQueue()
+        }
     }
 
     /// Set the SHA256-hex hash of the user's email (lowercase + trim, then
@@ -450,27 +466,36 @@ public final class FunnelMob {
     /// as `user.email`. The SDK never sees the raw value — the host is
     /// responsible for normalization and hashing.
     public func setHashedEmail(_ sha256: String?) {
-        self.hashedEmail = sha256
-        Logger.debug("Hashed email \(sha256 == nil ? "cleared" : "set")")
-        markIdentifierDirty()
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.hashedEmail = sha256
+            Logger.debug("Hashed email \(sha256 == nil ? "cleared" : "set")")
+            self.markIdentifierDirtyOnQueue()
+        }
     }
 
     /// Set the SHA256-hex hash of the user's phone number (E.164 format
     /// pre-hash, e.g. `+12025551234`). Forwarded to Meta CAPI as
     /// `user_data.ph` and TikTok Events as `user.phone`.
     public func setHashedPhone(_ sha256: String?) {
-        self.hashedPhone = sha256
-        Logger.debug("Hashed phone \(sha256 == nil ? "cleared" : "set")")
-        markIdentifierDirty()
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.hashedPhone = sha256
+            Logger.debug("Hashed phone \(sha256 == nil ? "cleared" : "set")")
+            self.markIdentifierDirtyOnQueue()
+        }
     }
 
     /// Set the SHA256-hex hash of an external user identifier (CRM ID,
     /// auth user ID). Forwarded as `external_id` to both Meta and TikTok
     /// for cross-event matching against the host's user graph.
     public func setHashedExternalId(_ sha256: String?) {
-        self.hashedExternalId = sha256
-        Logger.debug("Hashed external_id \(sha256 == nil ? "cleared" : "set")")
-        markIdentifierDirty()
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.hashedExternalId = sha256
+            Logger.debug("Hashed external_id \(sha256 == nil ? "cleared" : "set")")
+            self.markIdentifierDirtyOnQueue()
+        }
     }
 
     /// Record the current ATT authorization status. Persisted on the
@@ -479,9 +504,12 @@ public final class FunnelMob {
     /// host reads `ATTrackingManager.trackingAuthorizationStatus` and
     /// passes the equivalent `ATTStatus` case.
     public func setATTStatus(_ status: ATTStatus) {
-        self.attStatus = status
-        Logger.debug("ATT status set: \(status.rawValue)")
-        markIdentifierDirty()
+        identifierQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.attStatus = status
+            Logger.debug("ATT status set: \(status.rawValue)")
+            self.markIdentifierDirtyOnQueue()
+        }
     }
 
     /// Bypass the 1-second debounce and immediately fire a `/v1/session`
@@ -504,14 +532,15 @@ public final class FunnelMob {
     /// re-fire. Called by every setter. No-op while `isStarted == false`
     /// (the values are buffered and ride on the first `start()` POST) or
     /// while a re-fire is already in flight (handled on POST completion).
-    private func markIdentifierDirty() {
-        identifierQueue.async { [weak self] in
-            guard let self = self else { return }
-            self.isIdentifierDirty = true
-            guard self.isStarted else { return }
-            guard !self.isReFireInFlight else { return }
-            self.scheduleDebounce()
-        }
+    ///
+    /// Must be called on `identifierQueue`. Setters dispatch to the queue
+    /// and call this directly; off-queue callers should use the public
+    /// `flushIdentifiers()` API instead.
+    private func markIdentifierDirtyOnQueue() {
+        isIdentifierDirty = true
+        guard isStarted else { return }
+        guard !isReFireInFlight else { return }
+        scheduleDebounce()
     }
 
     /// Cancel any pending debounce timer and start a fresh one. Must be
