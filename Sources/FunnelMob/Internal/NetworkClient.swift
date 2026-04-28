@@ -296,4 +296,19 @@ enum NetworkError: Error {
     case clientError(Int)
     case serverError(Int)
     case unknownError(Int)
+
+    /// Whether the failure is worth retrying. Transient transport-layer
+    /// errors (offline, DNS, TLS, timeout, server 5xx, 429 rate-limit) are
+    /// retryable; client-side errors (bad URL, encode failure, 4xx) are
+    /// permanent and would just fail again on retry. Used by
+    /// `EventQueue.flush(...)` to decide whether to re-queue a failed batch
+    /// or drop it.
+    var isRetryable: Bool {
+        switch self {
+        case .networkError, .serverError, .rateLimited, .unknownError:
+            return true
+        case .invalidURL, .encodingError, .invalidResponse, .unauthorized, .clientError:
+            return false
+        }
+    }
 }
