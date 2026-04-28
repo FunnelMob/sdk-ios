@@ -75,6 +75,13 @@ public final class FunnelMob {
     private static let configKey = "com.funnelmob.config"
     private static let configTimestampKey = "com.funnelmob.config.ts"
     private static let configCacheTTL: TimeInterval = 300 // 5 minutes
+    /// Persistent boolean marker used to decide whether the SDK should fire
+    /// the one-time `Install` + `ActivateApp(is_first_session: true)` events
+    /// on this cold start. Set to `true` after the first launch's events
+    /// have been enqueued so subsequent launches don't re-fire them. Wipes
+    /// on app uninstall (UserDefaults semantics) — which is the correct
+    /// behavior since reinstall = new install.
+    private static let firstLaunchCompletedKey = "com.funnelmob.firstLaunchCompleted"
 
     private init() {
         self.eventQueue = EventQueue()
@@ -154,9 +161,9 @@ public final class FunnelMob {
         guard let configuration = configuration else { return }
         isStarted = true
 
-        let isFirstLaunch = loadAttribution() == nil
+        let isFirstLaunch = !UserDefaults.standard.bool(forKey: Self.firstLaunchCompletedKey)
 
-        startSession()
+        startSession(isFirstLaunch: isFirstLaunch)
         fetchRemoteConfig()
         startFlushTimer(interval: configuration.flushInterval)
         registerLifecycleObservers()
@@ -166,6 +173,12 @@ public final class FunnelMob {
             var launchParams = FunnelMobEventParameters()
             launchParams.set("is_first_session", value: true)
             trackActivateApp(parameters: launchParams)
+            // Set the marker AFTER the first-launch events are enqueued.
+            // Semantic B: if consent blocks dispatch, the events are dropped
+            // at the consent gate but the marker is still set, so Install
+            // never fires again — matches the SDK's "consent denied = nothing
+            // tracked, ever" model.
+            UserDefaults.standard.set(true, forKey: Self.firstLaunchCompletedKey)
         } else {
             trackActivateApp()
         }
@@ -453,20 +466,30 @@ public final class FunnelMob {
         }
     }
 
-    private func startSession() {
-        // Check for existing attribution
+    /// Send the per-cold-start `/v1/session` ping and (on first launch only)
+    /// receive the attribution result from the backend. Cached attribution
+    /// still drives the immediate callback fire — only the network POST is
+    /// gated by `isFirstLaunch`'s flag value, never by attribution presence.
+    private func startSession(isFirstLaunch: Bool) {
+        // Notify callbacks immediately when we already have a stored
+        // attribution result, so the host's onAttribution handler fires
+        // without waiting for the network round-trip. This runs even on
+        // subsequent cold starts — the cached attribution remains valid for
+        // the device's lifetime.
         if let stored = loadAttribution() {
             attributionId = stored.attributionId
             Logger.debug("Loaded existing attribution")
             notifyCallbacks(stored)
-            return
         }
 
-        // First session — request attribution from server
-        requestAttribution()
+        // Always POST /v1/session on cold start. The backend uses the
+        // is_first_session flag to decide whether to run the (expensive)
+        // attribution engine; subsequent sessions just refresh device
+        // identifiers and bump user_profile.last_seen_at.
+        requestSession(isFirstLaunch: isFirstLaunch)
     }
 
-    private func requestAttribution() {
+    private func requestSession(isFirstLaunch: Bool) {
         guard let config = configuration else { return }
 
         // Build the request and clear the dirty bit on identifierQueue so the
@@ -476,29 +499,36 @@ public final class FunnelMob {
         identifierQueue.async { [weak self] in
             guard let self = self else { return }
             if let consent = self.consent, consent.blocksDispatch {
-                Logger.debug("Consent blocks dispatch, skipping initial session POST")
+                Logger.debug("Consent blocks dispatch, skipping session POST")
                 return
             }
             let wasDirty = self.isIdentifierDirty
             self.isIdentifierDirty = false
-            let request = self.buildSessionRequest(isFirstSession: true)
+            let request = self.buildSessionRequest(isFirstSession: isFirstLaunch)
 
             self.networkClient.sendSession(request, configuration: config) { [weak self] result in
                 guard let self = self else { return }
 
                 switch result {
                 case .success(let response):
-                    if let attribution = response.attribution {
-                        self.attributionId = attribution.attributionId
-                        self.saveAttribution(attribution)
-                        Logger.info("Attribution received")
-                        self.notifyCallbacks(attribution)
-                    } else {
-                        self.notifyCallbacks(nil)
+                    // The backend only runs attribution for is_first_session=true
+                    // requests. On subsequent cold starts, the response contains
+                    // no attribution result and there's nothing to save or notify.
+                    if isFirstLaunch {
+                        if let attribution = response.attribution {
+                            self.attributionId = attribution.attributionId
+                            self.saveAttribution(attribution)
+                            Logger.info("Attribution received")
+                            self.notifyCallbacks(attribution)
+                        } else {
+                            self.notifyCallbacks(nil)
+                        }
                     }
                 case .failure(let error):
-                    Logger.error("Attribution request failed: \(error)")
-                    self.notifyCallbacks(nil)
+                    Logger.error("Session request failed: \(error)")
+                    if isFirstLaunch {
+                        self.notifyCallbacks(nil)
+                    }
                     // Restore dirty so a foreground hook / next setter re-fires.
                     self.identifierQueue.async {
                         if wasDirty { self.isIdentifierDirty = true }
