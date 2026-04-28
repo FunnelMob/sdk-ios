@@ -97,6 +97,30 @@ public struct AttributionResult: Codable {
     }
 }
 
+/// Consent payload attached to session requests. Mirrors
+/// `FunnelMobConsent` on the wire.
+struct ConsentPayload: Encodable {
+    let isUserSubjectToGDPR: Bool
+    let hasConsentForDataUsage: Bool?
+    let hasConsentForAdsPersonalization: Bool?
+    let hasConsentForAdStorage: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case isUserSubjectToGDPR = "is_user_subject_to_gdpr"
+        case hasConsentForDataUsage = "has_consent_for_data_usage"
+        case hasConsentForAdsPersonalization = "has_consent_for_ads_personalization"
+        case hasConsentForAdStorage = "has_consent_for_ad_storage"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isUserSubjectToGDPR, forKey: .isUserSubjectToGDPR)
+        try container.encodeIfPresent(hasConsentForDataUsage, forKey: .hasConsentForDataUsage)
+        try container.encodeIfPresent(hasConsentForAdsPersonalization, forKey: .hasConsentForAdsPersonalization)
+        try container.encodeIfPresent(hasConsentForAdStorage, forKey: .hasConsentForAdStorage)
+    }
+}
+
 /// Device context for session requests
 struct DeviceContextPayload: Encodable {
     let osVersion: String?
@@ -140,6 +164,10 @@ struct SessionRequest: Encodable {
     let externalIdSha256: String?
     /// iOS ATT status: "authorized" | "denied" | "restricted" | "notDetermined".
     let attStatus: String?
+    /// Per-user consent state (GDPR / DMA). Optional — when nil, the
+    /// host has not configured consent and the backend should treat the
+    /// session as non-EEA / no-restriction.
+    let consent: ConsentPayload?
 
     enum CodingKeys: String, CodingKey {
         case deviceId = "device_id"
@@ -156,6 +184,7 @@ struct SessionRequest: Encodable {
         case phoneSha256 = "phone_sha256"
         case externalIdSha256 = "external_id_sha256"
         case attStatus = "att_status"
+        case consent
     }
 
     func encode(to encoder: Encoder) throws {
@@ -174,6 +203,7 @@ struct SessionRequest: Encodable {
         try container.encodeIfPresent(phoneSha256, forKey: .phoneSha256)
         try container.encodeIfPresent(externalIdSha256, forKey: .externalIdSha256)
         try container.encodeIfPresent(attStatus, forKey: .attStatus)
+        try container.encodeIfPresent(consent, forKey: .consent)
     }
 }
 

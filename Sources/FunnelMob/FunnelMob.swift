@@ -43,12 +43,31 @@ public final class FunnelMob {
     private var hashedEmail: String?
     private var hashedPhone: String?
     private var hashedExternalId: String?
-    private var attStatus: ATTStatus?
     private var isIdentifierDirty = false
     private var isReFireInFlight = false
     private var identifierDebounceTimer: DispatchSourceTimer?
     private let identifierQueue = DispatchQueue(label: "com.funnelmob.identifiers")
     private static let identifierDebounceMs: Int = 1000
+
+    // MARK: - ATT wait state
+    //
+    // Set when `Configuration.waitForATTAuthorization == true` and ATT
+    // status is still `.notDetermined` at `start()`. While waiting, the
+    // SDK accepts `trackEvent(...)` calls (events buffer in-memory) but
+    // does not POST sessions or events. Cleared when ATT becomes
+    // determined — either via the SDK's `requestTrackingAuthorization`
+    // wrapper or via a subsequent `didBecomeActive` (in case the user
+    // toggled ATT in Settings).
+    private var isWaitingForATT = false
+    private var attWaitObserver: NSObjectProtocol?
+
+    // MARK: - Consent state
+    //
+    // `nil` until the host calls `setConsent(_:)`. When nil, the SDK
+    // tracks normally (default behavior — opt-in compliance). When the
+    // current consent blocks dispatch, `trackEvent(...)` drops new events
+    // and `flush()` is a no-op.
+    private var consent: FunnelMobConsent?
 
     private static let keychainService = "com.funnelmob.attribution"
     private static let keychainAccount = "attribution_result"
@@ -117,6 +136,22 @@ public final class FunnelMob {
             Logger.warning("FunnelMob already started")
             return
         }
+        guard !isWaitingForATT else {
+            Logger.warning("FunnelMob already waiting for ATT — call requestTrackingAuthorization to advance")
+            return
+        }
+
+        if configuration.waitForATTAuthorization && !isATTDetermined() {
+            Logger.info("Waiting for ATT authorization before starting")
+            beginATTWait()
+            return
+        }
+
+        actuallyStart()
+    }
+
+    private func actuallyStart() {
+        guard let configuration = configuration else { return }
         isStarted = true
 
         let isFirstLaunch = loadAttribution() == nil
@@ -133,6 +168,44 @@ public final class FunnelMob {
             trackActivateApp(parameters: launchParams)
         } else {
             trackActivateApp()
+        }
+    }
+
+    // MARK: - ATT wait
+
+    /// Enter the waiting state: register a one-shot `didBecomeActive`
+    /// observer so we recover if the user toggles ATT in Settings while
+    /// the app is backgrounded. The SDK's own `requestTrackingAuthorization`
+    /// wrapper also calls `handleATTDetermined()` on completion.
+    private func beginATTWait() {
+        isWaitingForATT = true
+        #if canImport(UIKit) && !os(watchOS)
+        attWaitObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleATTDetermined()
+        }
+        #endif
+    }
+
+    /// Called when ATT may have transitioned out of `.notDetermined`. If
+    /// we were waiting and the status is now resolved, tear down the wait
+    /// observer and run the deferred `actuallyStart()`. Safe to call from
+    /// any thread; hops to main.
+    func handleATTDetermined() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard self.isWaitingForATT else { return }
+            guard self.isATTDetermined() else { return }
+
+            self.isWaitingForATT = false
+            if let observer = self.attWaitObserver {
+                NotificationCenter.default.removeObserver(observer)
+                self.attWaitObserver = nil
+            }
+            self.actuallyStart()
         }
     }
 
@@ -230,8 +303,13 @@ public final class FunnelMob {
             return
         }
 
-        guard isStarted else {
+        guard isStarted || isWaitingForATT else {
             Logger.debug("FunnelMob not started, ignoring event: \(name)")
+            return
+        }
+
+        if let consent = consent, consent.blocksDispatch {
+            Logger.debug("Consent blocks dispatch, dropping event: \(name)")
             return
         }
 
@@ -263,6 +341,14 @@ public final class FunnelMob {
     /// Force send queued events immediately
     public func flush() {
         guard let config = configuration else { return }
+        guard isStarted else {
+            Logger.debug("flush() called before start; skipping")
+            return
+        }
+        if let consent = consent, consent.blocksDispatch {
+            Logger.debug("Consent blocks dispatch, skipping flush")
+            return
+        }
         eventQueue.flush(using: networkClient, configuration: config, userId: userId)
     }
 
@@ -326,6 +412,10 @@ public final class FunnelMob {
 
     private func sendIdentify() {
         guard let config = configuration, let userId = userId else { return }
+        if let consent = consent, consent.blocksDispatch {
+            Logger.debug("Consent blocks dispatch, skipping identify")
+            return
+        }
 
         let context = deviceInfo.toContext()
         let request = IdentifyRequest(
@@ -385,6 +475,10 @@ public final class FunnelMob {
         // next foreground/setter schedules a re-fire.
         identifierQueue.async { [weak self] in
             guard let self = self else { return }
+            if let consent = self.consent, consent.blocksDispatch {
+                Logger.debug("Consent blocks dispatch, skipping initial session POST")
+                return
+            }
             let wasDirty = self.isIdentifierDirty
             self.isIdentifierDirty = false
             let request = self.buildSessionRequest(isFirstSession: true)
@@ -439,7 +533,15 @@ public final class FunnelMob {
             emailSha256: hashedEmail,
             phoneSha256: hashedPhone,
             externalIdSha256: hashedExternalId,
-            attStatus: attStatus?.rawValue
+            attStatus: currentATTStatusString(),
+            consent: consent.map {
+                ConsentPayload(
+                    isUserSubjectToGDPR: $0.isUserSubjectToGDPR,
+                    hasConsentForDataUsage: $0.hasConsentForDataUsage,
+                    hasConsentForAdsPersonalization: $0.hasConsentForAdsPersonalization,
+                    hasConsentForAdStorage: $0.hasConsentForAdStorage
+                )
+            }
         )
     }
 
@@ -498,16 +600,29 @@ public final class FunnelMob {
         }
     }
 
-    /// Record the current ATT authorization status. Persisted on the
-    /// device row for audit purposes; not forwarded to ad networks
-    /// directly. The SDK does not import `AppTrackingTransparency` — the
-    /// host reads `ATTrackingManager.trackingAuthorizationStatus` and
-    /// passes the equivalent `ATTStatus` case.
-    public func setATTStatus(_ status: ATTStatus) {
+    /// Record the user's GDPR / DMA consent decision.
+    ///
+    /// When `consent.blocksDispatch == true` (GDPR applies and data-usage
+    /// consent was denied), the SDK stops dispatching new events and
+    /// purges the local queue. Otherwise, the consent state is attached
+    /// to the next session payload and a re-fire is scheduled so the
+    /// backend learns the new state without waiting for a natural
+    /// session boundary.
+    ///
+    /// Calling this method is opt-in. Hosts that never call it get the
+    /// SDK's default behavior (track everything).
+    public func setConsent(_ consent: FunnelMobConsent) {
         identifierQueue.async { [weak self] in
             guard let self = self else { return }
-            self.attStatus = status
-            Logger.debug("ATT status set: \(status.rawValue)")
+            self.consent = consent
+            Logger.info("Consent updated (gdpr=\(consent.isUserSubjectToGDPR), dataUsage=\(String(describing: consent.hasConsentForDataUsage)))")
+
+            if consent.blocksDispatch {
+                self.eventQueue.clear()
+                Logger.info("Consent blocks dispatch — local event queue purged")
+                return
+            }
+
             self.markIdentifierDirtyOnQueue()
         }
     }
@@ -567,6 +682,11 @@ public final class FunnelMob {
         guard isStarted else { return }
         guard isIdentifierDirty else { return }
         guard let config = configuration else { return }
+        if let consent = consent, consent.blocksDispatch {
+            Logger.debug("Consent blocks dispatch, skipping session re-fire")
+            isIdentifierDirty = false
+            return
+        }
 
         isReFireInFlight = true
         isIdentifierDirty = false

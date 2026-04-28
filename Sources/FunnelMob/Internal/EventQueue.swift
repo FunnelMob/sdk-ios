@@ -42,6 +42,18 @@ final class EventQueue {
         return events.count
     }
 
+    /// Drop every queued event from memory and persistent storage.
+    /// Used when the user revokes consent — GDPR requires the SDK to
+    /// stop processing further data, including data already in flight
+    /// to the network layer.
+    func clear() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        events.removeAll()
+        UserDefaults.standard.removeObject(forKey: persistenceKey)
+    }
+
     /// Flush all events
     func flush(using client: NetworkClient, configuration: FunnelMobConfiguration, userId: String? = nil) {
         let batch = dequeue(maxCount: configuration.maxBatchSize)

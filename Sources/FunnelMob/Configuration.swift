@@ -35,6 +35,24 @@ public struct FunnelMobConfiguration {
     /// consent required by applicable law.
     public var autoStart: Bool
 
+    /// Whether the SDK should defer its first session POST and event flushes
+    /// until the user has responded to the iOS App Tracking Transparency
+    /// prompt.
+    ///
+    /// Defaults to `false` (no waiting — the SDK starts immediately and
+    /// reads the live ATT status on every payload).
+    ///
+    /// When `true`, `start()` enters a waiting state until ATT is
+    /// determined (authorized/denied/restricted). Events tracked while
+    /// waiting are buffered and flushed once the user responds. The host
+    /// MUST eventually present the ATT prompt — typically via
+    /// `FunnelMob.shared.requestTrackingAuthorization { ... }` — or the
+    /// SDK will wait indefinitely.
+    ///
+    /// No-op on platforms without `AppTrackingTransparency` (watchOS):
+    /// the SDK starts immediately as if this flag were `false`.
+    public var waitForATTAuthorization: Bool
+
     /// Log level options
     public enum LogLevel: Int, Comparable {
         case none = 0
@@ -59,6 +77,7 @@ public struct FunnelMobConfiguration {
         self.maxBatchSize = 100
         self.customURL = nil
         self.autoStart = true
+        self.waitForATTAuthorization = false
     }
 }
 
@@ -110,6 +129,16 @@ public extension FunnelMobConfiguration {
     func with(autoStart: Bool) -> FunnelMobConfiguration {
         var config = self
         config.autoStart = autoStart
+        return config
+    }
+
+    /// Defer the first session POST and event flushes until the user has
+    /// responded to the iOS ATT prompt. The host must eventually call
+    /// `FunnelMob.shared.requestTrackingAuthorization { ... }` (or the
+    /// underlying `ATTrackingManager` API) or the SDK waits indefinitely.
+    func with(waitForATTAuthorization: Bool) -> FunnelMobConfiguration {
+        var config = self
+        config.waitForATTAuthorization = waitForATTAuthorization
         return config
     }
 }
