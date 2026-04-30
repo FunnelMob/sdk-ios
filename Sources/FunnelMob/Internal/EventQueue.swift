@@ -54,18 +54,35 @@ final class EventQueue {
         UserDefaults.standard.removeObject(forKey: persistenceKey)
     }
 
+    /// Prepend a previously-dequeued batch back to the queue after a
+    /// retryable send failure. Preserves event ordering: the failed
+    /// batch retries first, before any newer events tracked while the
+    /// in-flight POST was outstanding.
+    func requeue(_ batch: [Event]) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        events.insert(contentsOf: batch, at: 0)
+        persistEvents()
+    }
+
     /// Flush all events
     func flush(using client: NetworkClient, configuration: FunnelMobConfiguration, userId: String? = nil) {
         let batch = dequeue(maxCount: configuration.maxBatchSize)
         guard !batch.isEmpty else { return }
 
         Logger.debug("Flushing \(batch.count) events")
-        client.sendEvents(batch, configuration: configuration, userId: userId) { result in
+        client.sendEvents(batch, configuration: configuration, userId: userId) { [weak self] result in
             switch result {
             case .success:
                 Logger.debug("Events sent successfully")
             case .failure(let error):
-                Logger.error("Failed to send events: \(error)")
+                if error.isRetryable {
+                    self?.requeue(batch)
+                    Logger.warning("Re-queued \(batch.count) events: \(error)")
+                } else {
+                    Logger.error("Dropped \(batch.count) events (non-retryable): \(error)")
+                }
             }
         }
     }
