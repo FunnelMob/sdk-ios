@@ -8,6 +8,11 @@ struct Event: Codable {
     let revenue: EventRevenue?
     let parameters: [String: Any]?
     let attributionId: String?
+    /// How many times this event's batch has failed and been re-queued.
+    /// Set to 0 on enqueue, incremented on every retryable failure. Once
+    /// any event in a batch exceeds `EventQueue.maxRetryAttempts`, the
+    /// whole batch is dropped to keep a poison-pill from looping forever.
+    var attemptCount: Int
 
     enum CodingKeys: String, CodingKey {
         case eventId = "event_id"
@@ -16,6 +21,7 @@ struct Event: Codable {
         case revenue
         case parameters
         case attributionId = "attribution_id"
+        case attemptCount = "attempt_count"
     }
 
     init(
@@ -24,7 +30,8 @@ struct Event: Codable {
         timestamp: String,
         revenue: EventRevenue?,
         parameters: [String: Any]?,
-        attributionId: String? = nil
+        attributionId: String? = nil,
+        attemptCount: Int = 0
     ) {
         self.eventId = eventId
         self.eventName = eventName
@@ -32,6 +39,7 @@ struct Event: Codable {
         self.revenue = revenue
         self.parameters = parameters
         self.attributionId = attributionId
+        self.attemptCount = attemptCount
     }
 
     // Custom encoding for parameters (Any type)
@@ -42,6 +50,7 @@ struct Event: Codable {
         try container.encode(timestamp, forKey: .timestamp)
         try container.encodeIfPresent(revenue, forKey: .revenue)
         try container.encodeIfPresent(attributionId, forKey: .attributionId)
+        try container.encode(attemptCount, forKey: .attemptCount)
 
         if let parameters = parameters {
             let jsonData = try JSONSerialization.data(withJSONObject: parameters)
@@ -57,6 +66,7 @@ struct Event: Codable {
         timestamp = try container.decode(String.self, forKey: .timestamp)
         revenue = try container.decodeIfPresent(EventRevenue.self, forKey: .revenue)
         attributionId = try container.decodeIfPresent(String.self, forKey: .attributionId)
+        attemptCount = try container.decodeIfPresent(Int.self, forKey: .attemptCount) ?? 0
 
         if let anyCodable = try container.decodeIfPresent(AnyCodable.self, forKey: .parameters) {
             parameters = anyCodable.value as? [String: Any]
