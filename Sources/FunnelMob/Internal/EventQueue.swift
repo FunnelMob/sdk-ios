@@ -77,11 +77,18 @@ final class EventQueue {
             case .success:
                 Logger.debug("Events sent successfully")
             case .failure(let error):
-                if error.isRetryable {
+                guard error.isRetryable else {
+                    Logger.error("Dropped \(batch.count) events (non-retryable): \(error)")
+                    return
+                }
+                // Retry queue is gated behind a config flag because the backend
+                // `events` table lacks `event_id` dedup. With dedup off, retrying
+                // a POST whose response was lost duplicates rows. Default off.
+                if configuration.enableRetryQueue {
                     self?.requeue(batch)
                     Logger.warning("Re-queued \(batch.count) events: \(error)")
                 } else {
-                    Logger.error("Dropped \(batch.count) events (non-retryable): \(error)")
+                    Logger.error("Dropped \(batch.count) events (retryable, but enableRetryQueue=false): \(error)")
                 }
             }
         }

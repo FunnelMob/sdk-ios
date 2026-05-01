@@ -53,6 +53,19 @@ public struct FunnelMobConfiguration {
     /// the SDK starts immediately as if this flag were `false`.
     public var waitForATTAuthorization: Bool
 
+    /// Whether the EventQueue re-queues a batch on retryable send failures
+    /// (5xx, 429, generic network errors) instead of dropping it. Defaults
+    /// to `false`.
+    ///
+    /// Why default-off: the backend `events` table is currently a plain
+    /// `MergeTree` (no `event_id` dedup). Until it migrates to
+    /// `ReplacingMergeTree(inserted_at)` keyed on `event_id`, a successful
+    /// POST whose response is lost (TCP RST after server commit, gateway
+    /// timeout) becomes a duplicate row on retry — and revenue events
+    /// would be double-counted. Set to `true` only in environments where
+    /// you accept duplicates, or once backend dedup ships.
+    public var enableRetryQueue: Bool
+
     /// Log level options
     public enum LogLevel: Int, Comparable {
         case none = 0
@@ -78,6 +91,7 @@ public struct FunnelMobConfiguration {
         self.customURL = nil
         self.autoStart = true
         self.waitForATTAuthorization = false
+        self.enableRetryQueue = false
     }
 }
 
@@ -139,6 +153,16 @@ public extension FunnelMobConfiguration {
     func with(waitForATTAuthorization: Bool) -> FunnelMobConfiguration {
         var config = self
         config.waitForATTAuthorization = waitForATTAuthorization
+        return config
+    }
+
+    /// Enable the retry queue: re-queue batches that fail with retryable
+    /// errors (5xx / 429 / network) instead of dropping them. Default
+    /// `false` until backend `events` table grows `event_id` dedup —
+    /// see `FunnelMobConfiguration.enableRetryQueue` for rationale.
+    func with(enableRetryQueue: Bool) -> FunnelMobConfiguration {
+        var config = self
+        config.enableRetryQueue = enableRetryQueue
         return config
     }
 }
